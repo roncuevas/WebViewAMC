@@ -3,7 +3,7 @@ import Foundation
 import WebKit
 
 @MainActor
-public final class WebViewManager: Sendable, WebViewMessageHandlerDelegate, WebViewCoordinatorDelegate {
+public final class WebViewManager: Sendable {
     public static let shared = WebViewManager()
     public static let handlerName = "myNativeApp"
     public static let verbose = false
@@ -12,17 +12,6 @@ public final class WebViewManager: Sendable, WebViewMessageHandlerDelegate, WebV
     public let coordinator = WebViewCoordinator()
     public lazy var fetcher = WebViewDataFetcher(webView: webView)
     public let handler = WebViewMessageHandler()
-    
-    private let messageSubject = PassthroughSubject<[String: Any], Never>()
-    private let cookiesSubject = PassthroughSubject<[HTTPCookie], Never>()
-    
-    public var messagePublisher: AnyPublisher<[String: Any], Never> {
-        messageSubject.eraseToAnyPublisher()
-    }
-    
-    public var cookiesPublisher: AnyPublisher<[HTTPCookie], Never> {
-        cookiesSubject.eraseToAnyPublisher()
-    }
     
     private init() {
         let userContentController = WKUserContentController()
@@ -35,17 +24,6 @@ public final class WebViewManager: Sendable, WebViewMessageHandlerDelegate, WebV
         if #available(iOS 16.4, *) {
             webView.isInspectable = true
         }
-        
         webView.navigationDelegate = coordinator
-        coordinator.delegate = self
-        handler.delegate = self
-    }
-        
-    public func messageReceiver(message: [String: Any]) {
-        messageSubject.send(message)
-    }
-    
-    public func cookiesReceiver(cookies: [HTTPCookie]) {
-        cookiesSubject.send(cookies)
     }
 }

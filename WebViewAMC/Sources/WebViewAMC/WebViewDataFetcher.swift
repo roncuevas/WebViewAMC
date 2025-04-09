@@ -1,11 +1,15 @@
 import Foundation
 import WebKit
 import Dispatch
+import os
+import Combine
 
 @MainActor
 public final class WebViewDataFetcher {
     private let webView: WKWebView
     private let taskManager = WebViewTaskManager()
+    
+    public var tasksRunning = PassthroughSubject<[String], Never>()
     
     public init(webView: WKWebView) {
         self.webView = webView
@@ -24,104 +28,121 @@ public final class WebViewDataFetcher {
     private func fetch(request: DataFetchRequest) {
         let task = Task {
             var counter = 0
-            repeat {
-                print("-> Fetching \(request.description) for \(request.iterations == nil ? "infinite" : String(counter))")
-                print("-> Tasks: \(taskManager.count)")
+            while (request.condition?() ?? true) && counter < request.iterations ?? 1 {
+                if let url = request.url {
+                    try? await Task.sleep(nanoseconds: request.delayToLoad)
+                    webView.loadURL(id: request.id,
+                                    url: url,
+                                    forceRefresh: request.forceRefresh,
+                                    cookies: request.cookies)
+                }
+                try? await Task.sleep(nanoseconds: request.delayToFetch)
+                if request.verbose {
+                    print("     - Fetching \(request.id) for \(request.iterations == nil ? "infinite" : String(counter))")
+                }
                 webView.injectJavaScript(handlerName: WebViewManager.handlerName,
                                          javaScript: request.javaScript)
-                try await Task.sleep(nanoseconds: request.delay)
+                try await Task.sleep(nanoseconds: request.delayToNextRequest)
                 if let _ = request.iterations {
                     counter += 1
                 }
-            } while (request.condition?() ?? true) && counter < request.iterations ?? 1
+            }
             taskManager.remove(key: request.id)
         }
-        taskManager.add(key: request.id, value: task)
+        taskManager.insert(key: request.id, value: task)
     }
-    
-    public func fetchWhile(run javaScript: String,
+    /*
+    private func fetchWhile(id: String,
+                           run javaScript: String,
                            delay: UInt64 = 1_000_000_000,
-                           description: String = "",
                            while condition: @escaping () -> Bool) {
-        let request = DataFetchRequest(javaScript: javaScript,
-                                       delay: delay,
-                                       description: description,
+        let request = DataFetchRequest(id: id,
+                                       javaScript: javaScript,
+                                       delayToNextRequest: delay,
                                        condition: condition)
         fetch(request: request)
     }
-    
-    public func fetchInfinite(run javaScript: String,
-                              delay: UInt64 = 1_000_000_000,
-                              description: String = "") {
-        let request = DataFetchRequest(javaScript: javaScript,
-                                       delay: delay,
-                                       description: description,
+
+    private func fetchInfinite(id: String,
+                              run javaScript: String,
+                              delay: UInt64 = 1_000_000_000) {
+        let request = DataFetchRequest(id: id,
+                                       javaScript: javaScript,
+                                       delayToNextRequest: delay,
                                        condition: { true })
         fetch(request: request)
     }
     
-    public func fetchFinite(run javaScript: String,
+    private func fetchFinite(id: String,
+                            run javaScript: String,
                             delay: UInt64 = 1_000_000_000,
-                            description: String = "",
                             iterations: Int = 15) {
-        let request = DataFetchRequest(javaScript: javaScript,
-                                       delay: delay,
-                                       description: description,
+        let request = DataFetchRequest(id: id,
+                                       javaScript: javaScript,
+                                       delayToNextRequest: delay,
                                        iterations: iterations)
         fetch(request: request)
     }
     
-    public func fetchOnce(run javaScript: String,
-                          delay: UInt64 = 1_000_000_000,
-                          description: String = "") {
-        let request = DataFetchRequest(javaScript: javaScript,
-                                       delay: delay,
-                                       description: description,
+    private func fetchOnce(id: String,
+                          run javaScript: String,
+                          delay: UInt64 = 1_000_000_000) {
+        let request = DataFetchRequest(id: id,
+                                       javaScript: javaScript,
+                                       delayToNextRequest: delay,
                                        iterations: 1)
         fetch(request: request)
     }
     
-    public func fetchIterationsOrWhile(run javaScript: String,
+    private func fetchIterationsOrWhile(id: String,
+                                       run javaScript: String,
                                        delay: UInt64 = 1_000_000_000,
-                                       description: String = "",
                                        iterations: Int = 15,
                                        while condition: (() -> Bool)? = nil) {
-        let request = DataFetchRequest(javaScript: javaScript,
-                                       delay: delay,
-                                       description: description,
+        let request = DataFetchRequest(id: id,
+                                       javaScript: javaScript,
+                                       delayToNextRequest: delay,
                                        iterations: iterations,
                                        condition: condition)
         fetch(request: request)
     }
-    
-    public func addTask(from url: String,
-                        delayToRun: UInt64 = 1_000_000_000,
-                        fetch: [DataFetchRequest]) async {
-        webView.loadURL(url: url)
-        try? await Task.sleep(nanoseconds: delayToRun)
-        for request in fetch {
+    */
+    public func fetch(_ requests: [DataFetchRequest],
+                      for url: String? = nil) {
+        if let url {
+            webView.loadURL(id: requests.first?.id,
+                            url: url,
+                            forceRefresh: requests.first?.forceRefresh ?? false,
+                            cookies: requests.first?.cookies)
+        }
+        for request in requests {
             self.fetch(request: request)
         }
     }
-}
-
-public struct DataFetchRequest {
-    let id = UUID()
-    let javaScript: String
-    let delay: UInt64
-    let description: String
-    let iterations: Int?
-    let condition: (() -> Bool)?
     
-    public init(javaScript: String,
-                delay: UInt64 = 1_000_000_000,
-                description: String,
-                iterations: Int? = nil,
-                condition: ( () -> Bool)? = nil) {
-        self.javaScript = javaScript
-        self.delay = delay
-        self.description = description
-        self.iterations = iterations
-        self.condition = condition
+    public func debugTaskManager() {
+        guard !taskManager.hasTask(at: "DEBUG_TASK_MANAGER") else { return }
+        let task = Task {
+            while true {
+                print("-> Tasks - \(self.taskManager.count): \(self.taskManager.getKeys())")
+                tasksRunning.send(taskManager.getKeys())
+                await try Task.sleep(nanoseconds: 1_000_000_000)
+            }
+        }
+        taskManager.insert(key: "DEBUG_TASK_MANAGER", value: task)
+    }
+    
+    public func cancellAllTasks() {
+        Logger().trace("Tasks cancelled: ALL")
+        taskManager.removeAll()
+    }
+    
+    public func cancellTasks(_ keys: [String]) {
+        Logger().trace("Tasks cancelled: \(keys.description)")
+        taskManager.remove(keys)
+    }
+    
+    public func isRunning(_ key: String) -> Bool {
+        taskManager.hasTask(at: key)
     }
 }
