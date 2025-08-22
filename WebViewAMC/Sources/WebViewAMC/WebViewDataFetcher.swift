@@ -10,7 +10,8 @@ public final class WebViewDataFetcher {
     private let taskManager = WebViewTaskManager()
     
     public var tasksRunning = PassthroughSubject<[String], Never>()
-    
+    public var defaultJS: [String]?
+
     public init(webView: WKWebView) {
         self.webView = webView
     }
@@ -40,8 +41,11 @@ public final class WebViewDataFetcher {
                 if request.verbose {
                     print("     - Fetching \(request.id) for \(request.iterations == nil ? "infinite" : String(counter))")
                 }
-                webView.injectJavaScript(handlerName: WebViewManager.handlerName,
-                                         javaScript: request.javaScript)
+                webView.injectJavaScript(
+                    handlerName: WebViewManager.handlerName,
+                    defaultJS: defaultJS,
+                    javaScript: request.javaScript
+                )
                 try await Task.sleep(nanoseconds: request.delayToNextRequest)
                 if let _ = request.iterations {
                     counter += 1

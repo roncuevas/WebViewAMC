@@ -36,7 +36,12 @@ public class WebViewCoordinator: NSObject, ObservableObject, WKNavigationDelegat
         stopTimeoutTimer()
         delegate?.didFailLoading(error: error)
     }
-    
+
+    public func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction) async -> WKNavigationActionPolicy {
+        let url = navigationAction.request.url
+        return .allow
+    }
+
     private func startTimeoutTimer() {
         timeoutTimer?.invalidate() // Asegura que cualquier temporizador previo sea invalidado
         timeoutTimer = Timer.scheduledTimer(timeInterval: timeoutDuration, target: self, selector: #selector(timeoutReached), userInfo: nil, repeats: false)

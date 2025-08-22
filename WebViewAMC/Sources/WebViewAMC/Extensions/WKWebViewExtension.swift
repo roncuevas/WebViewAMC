@@ -3,11 +3,13 @@ import os
 
 public extension WKWebView {
     func injectJavaScript(handlerName: String,
+                          defaultJS: [String]?,
                           javaScript: String,
                           verbose: Bool = false) {
-        let combinedScript = [Scripts.common(handlerName), Scripts.advanced, javaScript]
-            .joined(separator: ";")
-        self.evaluateJavaScript(combinedScript) { result, error in
+        var combinedScript = [Scripts.common(handlerName)]
+        combinedScript.append(contentsOf: defaultJS ?? [])
+        combinedScript.append(javaScript)
+        self.evaluateJavaScript(combinedScript.joined(separator: ";")) { result, error in
             if let error = error, verbose {
                 Logger().error("-> Error executing JavaScript: \(error)")
             }

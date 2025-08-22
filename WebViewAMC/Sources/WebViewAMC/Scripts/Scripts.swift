@@ -44,19 +44,4 @@ struct Scripts {
         }
         """
     }
-    
-    static var advanced: String { """
-        function getCaptchaImage() {
-            var captchaImage = byID('c_default_ctl00_leftcolumn_loginuser_logincaptcha_CaptchaImage');
-            dict["imageData"] = imageToData(captchaImage, 1);
-            postMessage(dict);
-        }
-        
-        function getProfileImage() {
-            var profileImage = byID('ctl00_mainCopy_Foto');
-            dict["profileImageData"] = imageToData(profileImage, 1.5);
-            postMessage(dict);
-        }
-    """
-    }
 }
