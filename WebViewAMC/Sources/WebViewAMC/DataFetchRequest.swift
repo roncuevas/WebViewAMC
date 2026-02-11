@@ -1,6 +1,6 @@
 import Foundation
 
-public struct DataFetchRequest {
+public struct DataFetchRequest: Sendable {
     let id: String
     let url: String?
     let forceRefresh: Bool
@@ -11,8 +11,8 @@ public struct DataFetchRequest {
     let verbose: Bool
     let iterations: Int?
     let cookies: [HTTPCookie]?
-    let condition: (() -> Bool)?
-    
+    let condition: (@Sendable @MainActor () -> Bool)?
+
     public init(id: String,
                 url: String? = nil,
                 forceRefresh: Bool = false,
@@ -23,7 +23,7 @@ public struct DataFetchRequest {
                 verbose: Bool = true,
                 iterations: Int? = nil,
                 cookies: [HTTPCookie]? = nil,
-                condition: ( () -> Bool)? = nil) {
+                condition: (@Sendable @MainActor () -> Bool)? = nil) {
         self.id = id
         self.url = url
         self.forceRefresh = forceRefresh
@@ -35,5 +35,24 @@ public struct DataFetchRequest {
         self.iterations = iterations
         self.cookies = cookies
         self.condition = condition
+    }
+
+    public func toFetchAction() -> FetchAction {
+        let strategy: FetchStrategy
+        if let iterations, let condition {
+            strategy = .poll(maxAttempts: iterations, delay: .nanoseconds(delayToNextRequest), until: condition)
+        } else if let condition {
+            strategy = .continuous(delay: .nanoseconds(delayToNextRequest), while: condition)
+        } else {
+            strategy = .once(delay: .nanoseconds(delayToFetch))
+        }
+        return FetchAction(
+            id: id,
+            url: url,
+            javaScript: javaScript,
+            strategy: strategy,
+            cookies: cookies,
+            forceRefresh: forceRefresh
+        )
     }
 }
