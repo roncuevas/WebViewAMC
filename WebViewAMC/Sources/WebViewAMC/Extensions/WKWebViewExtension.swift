@@ -1,5 +1,4 @@
 import WebKit
-import os
 
 public extension WKWebView {
     func injectJavaScript(handlerName: String,
@@ -9,52 +8,60 @@ public extension WKWebView {
         var combinedScript = [Scripts.common(handlerName)]
         combinedScript.append(contentsOf: defaultJS ?? [])
         combinedScript.append(javaScript)
-        self.evaluateJavaScript(combinedScript.joined(separator: ";")) { result, error in
+        self.evaluateJavaScript(combinedScript.joined(separator: ";")) { _, error in
             if let error = error, verbose {
-                Logger().error("-> Error executing JavaScript: \(error)")
+                let logger = WebViewLogger()
+                logger.log(.error, "Error executing JavaScript: \(error)", source: "WKWebView")
             }
         }
     }
-    
+
     func loadURL(id: String?,
                  url: String,
                  forceRefresh: Bool = false,
-                 cookies: [HTTPCookie]? = nil) {
+                 cookies: [HTTPCookie]? = nil,
+                 cookieDomain: URL? = nil) {
+        let logger = WebViewLogger()
+
         guard url != self.url?.absoluteString || forceRefresh else {
             if let id {
-                Logger().info("-> ID: \(id) - La URL solicitada coincide con la URL actual \(url)")
+                logger.log(.info, "ID: \(id) - Requested URL matches current URL \(url)", source: "WKWebView")
             } else {
-                Logger().info("-> La URL solicitada coincide con la URL actual \(url)")
+                logger.log(.info, "Requested URL matches current URL \(url)", source: "WKWebView")
             }
             return
         }
-        guard let url = URL(string: url) else {
-            Logger().error("-> Invalid URL: \(url)")
+        guard let parsedURL = URL(string: url) else {
+            logger.log(.error, "Invalid URL: \(url)", source: "WKWebView")
             return
         }
-        if let cookies = HTTPCookieStorage.shared.cookies(for: URL(string: "https://www.saes.escom.ipn.mx/")!) {
+        if let domain = cookieDomain,
+           let domainCookies = HTTPCookieStorage.shared.cookies(for: domain) {
+            setCookies(domainCookies)
+        }
+        if let cookies {
             setCookies(cookies)
         }
-        self.load(URLRequest(url: url))
+        self.load(URLRequest(url: parsedURL))
         if let id {
-            Logger().info("-> Loaded: \(url) from \(id) \nForce refresh: \(forceRefresh)")
+            logger.log(.info, "Loaded: \(parsedURL) from \(id) | Force refresh: \(forceRefresh)", source: "WKWebView")
         } else {
-            Logger().info("-> Loaded: \(url)")
+            logger.log(.info, "Loaded: \(parsedURL)", source: "WKWebView")
         }
     }
-    
+
     func setCookies(_ cookies: [HTTPCookie]) {
         cookies.forEach { cookie in
             self.configuration.websiteDataStore.httpCookieStore.setCookie(cookie)
         }
     }
-    
+
     func removeCookies(_ cookies: [HTTPCookie]) {
         cookies.forEach { cookie in
             self.configuration.websiteDataStore.httpCookieStore.delete(cookie)
         }
     }
-    
+
     func removeCookies(_ cookieNames: [String]) {
         self.configuration.websiteDataStore.httpCookieStore.getAllCookies { cookies in
             let cookiesFiltered = cookies.filter { cookieNames.contains($0.name) }
