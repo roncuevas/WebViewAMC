@@ -1,29 +1,42 @@
-import Combine
 import Foundation
 import WebKit
 
 @MainActor
-public final class WebViewManager: Sendable {
+public final class WebViewManager: WebViewManaging, Sendable {
     public static let shared = WebViewManager()
-    public static let handlerName = "myNativeApp"
-    public static let verbose = false
-    
+
+    public let configuration: WebViewConfiguration
     public let webView: WKWebView
-    public let coordinator = WebViewCoordinator()
-    public lazy var fetcher = WebViewDataFetcher(webView: webView)
-    public let handler = WebViewMessageHandler()
-    
-    private init() {
+    public let coordinator: WebViewCoordinator
+    public lazy var fetcher = WebViewDataFetcher(webView: webView, configuration: configuration)
+    public let handler: WebViewMessageHandler
+    public let messageRouter: WebViewMessageRouter
+    public let cookieManager: CookieManager
+
+    public init(configuration: WebViewConfiguration = .default) {
+        self.configuration = configuration
+
         let userContentController = WKUserContentController()
-        userContentController.add(handler, name: WebViewManager.handlerName)
-        
-        let configuration = WKWebViewConfiguration()
-        configuration.userContentController = userContentController
-        webView = WKWebView(frame: .zero, configuration: configuration)
-        
+        let messageHandler = WebViewMessageHandler()
+        let router = WebViewMessageRouter()
+        messageHandler.router = router
+        userContentController.add(messageHandler, name: configuration.handlerName)
+
+        let wkConfiguration = WKWebViewConfiguration()
+        wkConfiguration.userContentController = userContentController
+        let webView = WKWebView(frame: .zero, configuration: wkConfiguration)
+
+        let coordinator = WebViewCoordinator(timeoutDuration: configuration.timeoutDuration)
+
         if #available(iOS 16.4, *) {
-            webView.isInspectable = true
+            webView.isInspectable = configuration.isInspectable
         }
         webView.navigationDelegate = coordinator
+
+        self.webView = webView
+        self.coordinator = coordinator
+        self.handler = messageHandler
+        self.messageRouter = router
+        self.cookieManager = CookieManager(webView: webView, cookieDomain: configuration.cookieDomain)
     }
 }
