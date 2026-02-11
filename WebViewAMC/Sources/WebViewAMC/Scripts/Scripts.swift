@@ -1,34 +1,34 @@
 import Foundation
 
-struct Scripts {
-    static func common(_ handlerName: String) -> String {
+public struct Scripts {
+    public static func common(_ handlerName: String) -> String {
         """
         var dict = {};
-        
+
         function byID(id) {
           return document.getElementById(id);
         }
-        
+
         function byClass(className) {
           return document.getElementsByClassName(className);
         }
-        
+
         function byTag(tag) {
           return document.getElementsByTagName(tag);
         }
-        
+
         function byName(name) {
           return document.getElementsByName(name);
         }
-        
+
         function bySelector(selector) {
           return document.querySelector(selector);
         }
-        
+
         function bySelectorAll(selector) {
           return document.querySelectorAll(selector);
         }
-        
+
         function imageToData(imageElement, scale) {
             var canvas = document.createElement("canvas");
             var context = canvas.getContext("2d");
@@ -38,10 +38,18 @@ struct Scripts {
             var imageData = canvas.toDataURL("image/jpeg");
             return imageData;
         }
-        
+
         function postMessage(message) {
             window.webkit.messageHandlers.\(handlerName).postMessage(message);
         }
         """
+    }
+
+    public static func custom(handlerName: String, additionalHelpers: [String] = []) -> String {
+        var script = common(handlerName)
+        for helper in additionalHelpers {
+            script += ";\n" + helper
+        }
+        return script
     }
 }
