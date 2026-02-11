@@ -1,61 +1,76 @@
 import WebKit
 
+public enum NavigationEvent: Sendable {
+    case started
+    case finished(URL?)
+    case failed(Error)
+    case timeout
+}
+
 public class WebViewCoordinator: NSObject, ObservableObject, WKNavigationDelegate {
     public weak var delegate: WebViewCoordinatorDelegate?
-    
-    private var timeoutTimer: Timer?
-    private var timeoutDuration: TimeInterval = 30.0  // Duración del timeout en segundos
-    
+
+    private var timeoutTask: Task<Void, Never>?
+    private var timeoutDuration: TimeInterval
+
+    private let eventsContinuation: AsyncStream<NavigationEvent>.Continuation
+    public let events: AsyncStream<NavigationEvent>
+
     init(delegate: WebViewCoordinatorDelegate? = nil,
          timeoutDuration: TimeInterval = 30) {
         self.delegate = delegate
         self.timeoutDuration = timeoutDuration
+        var continuation: AsyncStream<NavigationEvent>.Continuation!
+        self.events = AsyncStream { continuation = $0 }
+        self.eventsContinuation = continuation
     }
-    
+
     public func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
-        // Iniciar el temporizador cuando comienza la navegación
         startTimeoutTimer()
+        eventsContinuation.yield(.started)
     }
-    
+
     public func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
-        // Detener el temporizador cuando la navegación se complete
         stopTimeoutTimer()
 
         if let currentURL = webView.url {
             delegate?.didNavigateTo(url: currentURL)
         }
 
+        eventsContinuation.yield(.finished(webView.url))
+
         webView.configuration.websiteDataStore.httpCookieStore.getAllCookies { [weak self] cookies in
-            // HTTPCookieStorage.shared.setCookies(cookies, for: URL(string: "https://www.saes.escom.ipn.mx/")!, mainDocumentURL: nil)
             self?.delegate?.cookiesReceiver(cookies: cookies)
         }
     }
-    
+
     public func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
-        // Detener el temporizador si ocurre un error
         stopTimeoutTimer()
         delegate?.didFailLoading(error: error)
+        eventsContinuation.yield(.failed(error))
     }
 
     public func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction) async -> WKNavigationActionPolicy {
-        let url = navigationAction.request.url
-        return .allow
+        .allow
     }
 
     private func startTimeoutTimer() {
-        timeoutTimer?.invalidate() // Asegura que cualquier temporizador previo sea invalidado
-        timeoutTimer = Timer.scheduledTimer(timeInterval: timeoutDuration, target: self, selector: #selector(timeoutReached), userInfo: nil, repeats: false)
+        timeoutTask?.cancel()
+        timeoutTask = Task { [weak self, timeoutDuration] in
+            try? await Task.sleep(nanoseconds: UInt64(timeoutDuration * 1_000_000_000))
+            guard !Task.isCancelled else { return }
+            await MainActor.run {
+                self?.delegate?.didTimeout()
+                self?.eventsContinuation.yield(.timeout)
+            }
+        }
     }
-    
+
     private func stopTimeoutTimer() {
-        timeoutTimer?.invalidate()
-        timeoutTimer = nil
+        timeoutTask?.cancel()
+        timeoutTask = nil
     }
-    
-    @objc private func timeoutReached() {
-        delegate?.didTimeout()
-    }
-    
+
     public func setTimeout(_ timeoutDuration: TimeInterval) {
         self.timeoutDuration = timeoutDuration
     }
