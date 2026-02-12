@@ -4,13 +4,13 @@ public extension WKWebView {
     func injectJavaScript(handlerName: String,
                           defaultJS: [String]?,
                           javaScript: String,
-                          verbose: Bool = false) {
+                          verbose: Bool = false,
+                          logger: any WebViewLoggerProtocol = WebViewLogger()) {
         var combinedScript = [Scripts.common(handlerName)]
         combinedScript.append(contentsOf: defaultJS ?? [])
         combinedScript.append(javaScript)
         self.evaluateJavaScript(combinedScript.joined(separator: ";")) { _, error in
             if let error = error, verbose {
-                let logger = WebViewLogger()
                 logger.log(.error, "Error executing JavaScript: \(error)", source: "WKWebView")
             }
         }
@@ -20,9 +20,8 @@ public extension WKWebView {
                  url: String,
                  forceRefresh: Bool = false,
                  cookies: [HTTPCookie]? = nil,
-                 cookieDomain: URL? = nil) {
-        let logger = WebViewLogger()
-
+                 cookieDomain: URL? = nil,
+                 logger: any WebViewLoggerProtocol = WebViewLogger()) {
         guard url != self.url?.absoluteString || forceRefresh else {
             if let id {
                 logger.log(.info, "ID: \(id) - Requested URL matches current URL \(url)", source: "WKWebView")

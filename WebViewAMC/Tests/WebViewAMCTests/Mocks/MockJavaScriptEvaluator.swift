@@ -20,7 +20,7 @@ final class MockJavaScriptEvaluator: JavaScriptEvaluating {
         return stubbedResult
     }
 
-    func injectJavaScript(handlerName: String, defaultJS: [String]?, javaScript: String, verbose: Bool) {
+    func injectJavaScript(handlerName: String, defaultJS: [String]?, javaScript: String, verbose: Bool, logger: any WebViewLoggerProtocol) {
         injectCallCount += 1
         lastInjectedScript = javaScript
     }

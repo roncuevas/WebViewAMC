@@ -31,7 +31,8 @@ public final class WebViewDataFetcher {
                                     url: url,
                                     forceRefresh: request.forceRefresh,
                                     cookies: request.cookies,
-                                    cookieDomain: configuration.cookieDomain)
+                                    cookieDomain: configuration.cookieDomain,
+                                    logger: configuration.logger)
                 }
                 try? await Task.sleep(nanoseconds: request.delayToFetch)
                 if request.verbose {
@@ -41,7 +42,8 @@ public final class WebViewDataFetcher {
                     handlerName: configuration.handlerName,
                     defaultJS: defaultJS,
                     javaScript: request.javaScript,
-                    verbose: configuration.verbose
+                    verbose: configuration.verbose,
+                    logger: configuration.logger
                 )
                 try await Task.sleep(nanoseconds: request.delayToNextRequest)
                 if let _ = request.iterations {
@@ -61,7 +63,8 @@ public final class WebViewDataFetcher {
                             url: url,
                             forceRefresh: action.forceRefresh,
                             cookies: action.cookies,
-                            cookieDomain: configuration.cookieDomain)
+                            cookieDomain: configuration.cookieDomain,
+                            logger: configuration.logger)
         }
 
         switch action.strategy {
@@ -73,7 +76,8 @@ public final class WebViewDataFetcher {
                     handlerName: configuration.handlerName,
                     defaultJS: defaultJS,
                     javaScript: action.javaScript,
-                    verbose: configuration.verbose
+                    verbose: configuration.verbose,
+                    logger: configuration.logger
                 )
                 return .completed(id)
             } catch {
@@ -93,7 +97,8 @@ public final class WebViewDataFetcher {
                     handlerName: configuration.handlerName,
                     defaultJS: defaultJS,
                     javaScript: action.javaScript,
-                    verbose: configuration.verbose
+                    verbose: configuration.verbose,
+                    logger: configuration.logger
                 )
                 if until() { return .completed(id) }
             }
@@ -111,7 +116,8 @@ public final class WebViewDataFetcher {
                     handlerName: configuration.handlerName,
                     defaultJS: defaultJS,
                     javaScript: action.javaScript,
-                    verbose: configuration.verbose
+                    verbose: configuration.verbose,
+                    logger: configuration.logger
                 )
             }
             return .completed(id)
@@ -125,7 +131,8 @@ public final class WebViewDataFetcher {
                             url: url,
                             forceRefresh: requests.first?.forceRefresh ?? false,
                             cookies: requests.first?.cookies,
-                            cookieDomain: configuration.cookieDomain)
+                            cookieDomain: configuration.cookieDomain,
+                            logger: configuration.logger)
         }
         for request in requests {
             self.fetch(request: request)
