@@ -82,13 +82,4 @@ struct WebViewTaskManagerTests {
         #expect(manager.count == 2)
     }
 
-    @MainActor
-    @Test("getKeys delegates to keys computed property")
-    func getKeysMatchesKeys() {
-        let manager = WebViewTaskManager()
-        manager.insert(key: "b", value: Self.makeTask())
-        manager.insert(key: "a", value: Self.makeTask())
-
-        #expect(manager.getKeys() == manager.keys)
-    }
 }

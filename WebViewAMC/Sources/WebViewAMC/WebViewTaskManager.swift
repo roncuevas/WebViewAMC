@@ -34,11 +34,6 @@ public final class WebViewTaskManager {
         }
     }
 
-    @available(*, deprecated, message: "Use 'keys' instead")
-    public func getKeys() -> [String] {
-        self.keys
-    }
-
     public func hasTask(at key: String) -> Bool {
         tasks[key] != nil
     }

@@ -1,6 +1,5 @@
 import Foundation
 import WebKit
-import Combine
 
 @MainActor
 public final class WebViewDataFetcher {
@@ -8,10 +7,8 @@ public final class WebViewDataFetcher {
     private let taskManager = WebViewTaskManager()
     private let configuration: WebViewConfiguration
 
-    public var tasksRunning = PassthroughSubject<[String], Never>()
-
     private let tasksRunningContinuation: AsyncStream<[String]>.Continuation
-    public let tasksRunningStream: AsyncStream<[String]>
+    public let tasksRunning: AsyncStream<[String]>
 
     public var defaultJS: [String]?
 
@@ -19,7 +16,7 @@ public final class WebViewDataFetcher {
         self.webView = webView
         self.configuration = configuration
         var continuation: AsyncStream<[String]>.Continuation!
-        self.tasksRunningStream = AsyncStream { continuation = $0 }
+        self.tasksRunning = AsyncStream { continuation = $0 }
         self.tasksRunningContinuation = continuation
     }
 
@@ -120,58 +117,6 @@ public final class WebViewDataFetcher {
         return .completed(id)
     }
 
-    // MARK: - Legacy DataFetchRequest API
-
-    private func fetch(request: DataFetchRequest) {
-        let task = Task {
-            var counter = 0
-            while (request.condition?() ?? true) && counter < request.iterations ?? 1 {
-                if let url = request.url {
-                    try? await Task.sleep(nanoseconds: request.delayToLoad)
-                    webView.loadURL(id: request.id,
-                                    url: url,
-                                    forceRefresh: request.forceRefresh,
-                                    cookies: request.cookies,
-                                    cookieDomain: configuration.cookieDomain,
-                                    logger: configuration.logger)
-                }
-                try? await Task.sleep(nanoseconds: request.delayToFetch)
-                if request.verbose {
-                    configuration.logger.log(.debug, "Fetching \(request.id) for \(request.iterations == nil ? "infinite" : String(counter))")
-                }
-                webView.injectJavaScript(
-                    handlerName: configuration.handlerName,
-                    defaultJS: defaultJS,
-                    javaScript: request.javaScript,
-                    verbose: configuration.verbose,
-                    logger: configuration.logger
-                )
-                try await Task.sleep(nanoseconds: request.delayToNextRequest)
-                if let _ = request.iterations {
-                    counter += 1
-                }
-            }
-            taskManager.remove(key: request.id)
-        }
-        taskManager.insert(key: request.id, value: task)
-    }
-
-    @available(*, deprecated, message: "Use fetch(_ action: FetchAction) instead")
-    public func fetch(_ requests: [DataFetchRequest],
-                      for url: String? = nil) {
-        if let url {
-            webView.loadURL(id: requests.first?.id,
-                            url: url,
-                            forceRefresh: requests.first?.forceRefresh ?? false,
-                            cookies: requests.first?.cookies,
-                            cookieDomain: configuration.cookieDomain,
-                            logger: configuration.logger)
-        }
-        for request in requests {
-            self.fetch(request: request)
-        }
-    }
-
     // MARK: - Task Management
 
     public func debugTaskManager() {
@@ -179,7 +124,6 @@ public final class WebViewDataFetcher {
         let task = Task {
             while true {
                 configuration.logger.log(.debug, "Tasks - \(self.taskManager.count): \(self.taskManager.keys)")
-                tasksRunning.send(taskManager.keys)
                 tasksRunningContinuation.yield(taskManager.keys)
                 try await Task.sleep(nanoseconds: 1_000_000_000)
             }
@@ -195,16 +139,6 @@ public final class WebViewDataFetcher {
     public func cancelTasks(_ keys: [String]) {
         configuration.logger.log(.info, "Tasks cancelled: \(keys.description)")
         taskManager.remove(keys)
-    }
-
-    @available(*, deprecated, renamed: "cancelAllTasks")
-    public func cancellAllTasks() {
-        cancelAllTasks()
-    }
-
-    @available(*, deprecated, renamed: "cancelTasks")
-    public func cancellTasks(_ keys: [String]) {
-        cancelTasks(keys)
     }
 
     public func isRunning(_ key: String) -> Bool {

@@ -9,7 +9,6 @@ final class MockJavaScriptEvaluator: JavaScriptEvaluating {
     var lastEvaluatedScript: String?
     var lastInjectedScript: String?
     var evaluateCallCount = 0
-    var injectCallCount = 0
     var injectAsyncCallCount = 0
 
     func evaluateJavaScript(_ javaScript: String) async throws -> Any? {
@@ -21,11 +20,7 @@ final class MockJavaScriptEvaluator: JavaScriptEvaluating {
         return stubbedResult
     }
 
-    func injectJavaScript(handlerName: String, defaultJS: [String]?, javaScript: String, verbose: Bool, logger: any WebViewLoggerProtocol) {
-        injectCallCount += 1
-        lastInjectedScript = javaScript
-    }
-
+    @discardableResult
     func injectJavaScriptAsync(handlerName: String, defaultJS: [String]?, javaScript: String, verbose: Bool, logger: any WebViewLoggerProtocol) async throws -> Any? {
         injectAsyncCallCount += 1
         lastInjectedScript = javaScript
