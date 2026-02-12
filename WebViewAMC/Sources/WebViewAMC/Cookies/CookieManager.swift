@@ -11,6 +11,12 @@ public final class CookieManager {
         self.cookieDomain = cookieDomain
     }
 
+    public func setCookiesSync(_ cookies: [HTTPCookie]) {
+        for cookie in cookies {
+            webView.configuration.websiteDataStore.httpCookieStore.setCookie(cookie)
+        }
+    }
+
     public func injectCookies(_ cookies: [HTTPCookie]) async {
         for cookie in cookies {
             await webView.configuration.websiteDataStore.httpCookieStore.setCookie(cookie)

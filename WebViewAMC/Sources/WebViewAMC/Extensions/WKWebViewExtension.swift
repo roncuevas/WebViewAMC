@@ -69,18 +69,21 @@ public extension WKWebView {
         }
     }
 
+    @available(*, deprecated, message: "Use CookieManager.setCookiesSync or CookieManager.injectCookies instead")
     func setCookies(_ cookies: [HTTPCookie]) {
         cookies.forEach { cookie in
             self.configuration.websiteDataStore.httpCookieStore.setCookie(cookie)
         }
     }
 
+    @available(*, deprecated, message: "Use CookieManager.removeAllCookies instead")
     func removeCookies(_ cookies: [HTTPCookie]) {
         cookies.forEach { cookie in
             self.configuration.websiteDataStore.httpCookieStore.delete(cookie)
         }
     }
 
+    @available(*, deprecated, message: "Use CookieManager.removeCookies(named:) instead")
     func removeCookies(_ cookieNames: [String]) {
         self.configuration.websiteDataStore.httpCookieStore.getAllCookies { cookies in
             let cookiesFiltered = cookies.filter { cookieNames.contains($0.name) }
