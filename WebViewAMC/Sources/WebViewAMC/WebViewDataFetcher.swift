@@ -136,8 +136,8 @@ public final class WebViewDataFetcher {
         guard !taskManager.hasTask(at: "DEBUG_TASK_MANAGER") else { return }
         let task = Task {
             while true {
-                configuration.logger.log(.debug, "Tasks - \(self.taskManager.count): \(self.taskManager.getKeys())")
-                tasksRunning.send(taskManager.getKeys())
+                configuration.logger.log(.debug, "Tasks - \(self.taskManager.count): \(self.taskManager.keys)")
+                tasksRunning.send(taskManager.keys)
                 try await Task.sleep(nanoseconds: 1_000_000_000)
             }
         }

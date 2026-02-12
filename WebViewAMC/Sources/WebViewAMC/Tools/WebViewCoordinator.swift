@@ -7,7 +7,7 @@ public enum NavigationEvent: Sendable {
     case timeout
 }
 
-public class WebViewCoordinator: NSObject, ObservableObject, WKNavigationDelegate {
+public final class WebViewCoordinator: NSObject, ObservableObject, WKNavigationDelegate {
     public weak var delegate: WebViewCoordinatorDelegate?
 
     private var timeoutTask: Task<Void, Never>?
@@ -45,6 +45,12 @@ public class WebViewCoordinator: NSObject, ObservableObject, WKNavigationDelegat
     }
 
     public func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
+        stopTimeoutTimer()
+        delegate?.didFailLoading(error: error)
+        eventsContinuation.yield(.failed(error))
+    }
+
+    public func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
         stopTimeoutTimer()
         delegate?.didFailLoading(error: error)
         eventsContinuation.yield(.failed(error))
