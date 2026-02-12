@@ -6,4 +6,4 @@ public protocol JavaScriptEvaluating {
     func injectJavaScriptAsync(handlerName: String, defaultJS: [String]?, javaScript: String, verbose: Bool, logger: any WebViewLoggerProtocol) async throws -> Any?
 }
 
-extension WKWebView: @preconcurrency JavaScriptEvaluating {}
+extension WKWebView: JavaScriptEvaluating {}

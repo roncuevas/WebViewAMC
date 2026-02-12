@@ -26,16 +26,14 @@ public extension WKWebView {
                  cookies: [HTTPCookie]? = nil,
                  cookieDomain: URL? = nil,
                  logger: any WebViewLoggerProtocol = WebViewLogger()) {
+        let context = id.map { "[\($0)] " } ?? ""
+
         guard url != self.url?.absoluteString || forceRefresh else {
-            if let id {
-                logger.log(.info, "ID: \(id) - Requested URL matches current URL \(url)", source: "WKWebView")
-            } else {
-                logger.log(.info, "Requested URL matches current URL \(url)", source: "WKWebView")
-            }
+            logger.log(.info, "\(context)Requested URL matches current URL \(url)", source: "WKWebView")
             return
         }
         guard let parsedURL = URL(string: url) else {
-            logger.log(.error, "Invalid URL: \(url)", source: "WKWebView")
+            logger.log(.error, "\(context)Invalid URL: \(url)", source: "WKWebView")
             return
         }
         if let domain = cookieDomain,
@@ -50,10 +48,6 @@ public extension WKWebView {
             }
         }
         self.load(URLRequest(url: parsedURL))
-        if let id {
-            logger.log(.info, "Loaded: \(parsedURL) from \(id) | Force refresh: \(forceRefresh)", source: "WKWebView")
-        } else {
-            logger.log(.info, "Loaded: \(parsedURL)", source: "WKWebView")
-        }
+        logger.log(.info, "\(context)Loaded: \(parsedURL) | Force refresh: \(forceRefresh)", source: "WKWebView")
     }
 }

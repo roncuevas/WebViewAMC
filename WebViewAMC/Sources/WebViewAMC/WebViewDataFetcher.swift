@@ -16,19 +16,31 @@ public final class WebViewDataFetcher {
         self.webView = webView
         self.configuration = configuration
         var continuation: AsyncStream<[String]>.Continuation!
-        self.tasksRunning = AsyncStream { continuation = $0 }
+        self.tasksRunning = AsyncStream { cont in
+            cont.onTermination = { _ in }
+            continuation = cont
+        }
         self.tasksRunningContinuation = continuation
     }
 
-    public func getHTML() async throws -> String {
+    deinit {
+        tasksRunningContinuation.finish()
+    }
+
+    public func getHTML() async throws -> String? {
         let response = try await webView.evaluateJavaScript("document.documentElement.outerHTML;")
-        return String(describing: response ?? "")
+        return response as? String
     }
 
     // MARK: - FetchAction API
 
     public func fetch(_ action: FetchAction) async -> FetchResult {
         let id = action.id
+
+        if taskManager.hasTask(at: id) {
+            configuration.logger.log(.warning, "Task '\(id)' already running — cancelling previous instance")
+            taskManager.remove([id])
+        }
 
         let task = Task<FetchResult, Never> {
             if let url = action.url {
@@ -53,7 +65,7 @@ public final class WebViewDataFetcher {
             taskManager.remove(key: id)
             return result
         }
-        taskManager.insert(key: id, value: Task { _ = try await task.value })
+        taskManager.insert(key: id, value: Task { _ = await task.value })
 
         return await task.value
     }
@@ -86,13 +98,19 @@ public final class WebViewDataFetcher {
                 return .cancelled(id)
             }
             configuration.logger.log(.debug, "Polling \(id) attempt \(attempt + 1)/\(maxAttempts)")
-            try? await webView.injectJavaScriptAsync(
-                handlerName: configuration.handlerName,
-                defaultJS: defaultJS,
-                javaScript: javaScript,
-                verbose: configuration.verbose,
-                logger: configuration.logger
-            )
+            do {
+                try await webView.injectJavaScriptAsync(
+                    handlerName: configuration.handlerName,
+                    defaultJS: defaultJS,
+                    javaScript: javaScript,
+                    verbose: configuration.verbose,
+                    logger: configuration.logger
+                )
+            } catch is CancellationError {
+                return .cancelled(id)
+            } catch {
+                configuration.logger.log(.warning, "Polling \(id) attempt \(attempt + 1) failed: \(error.localizedDescription)")
+            }
             if until() { return .completed(id) }
         }
         return .completed(id)
@@ -106,13 +124,19 @@ public final class WebViewDataFetcher {
             } catch {
                 return .cancelled(id)
             }
-            try? await webView.injectJavaScriptAsync(
-                handlerName: configuration.handlerName,
-                defaultJS: defaultJS,
-                javaScript: javaScript,
-                verbose: configuration.verbose,
-                logger: configuration.logger
-            )
+            do {
+                try await webView.injectJavaScriptAsync(
+                    handlerName: configuration.handlerName,
+                    defaultJS: defaultJS,
+                    javaScript: javaScript,
+                    verbose: configuration.verbose,
+                    logger: configuration.logger
+                )
+            } catch is CancellationError {
+                return .cancelled(id)
+            } catch {
+                configuration.logger.log(.warning, "Continuous \(id) iteration failed: \(error.localizedDescription)")
+            }
         }
         return .completed(id)
     }
@@ -125,7 +149,7 @@ public final class WebViewDataFetcher {
             while true {
                 configuration.logger.log(.debug, "Tasks - \(self.taskManager.count): \(self.taskManager.keys)")
                 tasksRunningContinuation.yield(taskManager.keys)
-                try await Task.sleep(nanoseconds: 1_000_000_000)
+                try await Task.sleep(for: .seconds(1))
             }
         }
         taskManager.insert(key: "DEBUG_TASK_MANAGER", value: task)

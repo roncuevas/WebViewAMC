@@ -21,8 +21,16 @@ public final class WebViewCoordinator: NSObject, ObservableObject, WKNavigationD
         self.delegate = delegate
         self.timeoutDuration = timeoutDuration
         var continuation: AsyncStream<NavigationEvent>.Continuation!
-        self.events = AsyncStream { continuation = $0 }
+        self.events = AsyncStream { cont in
+            cont.onTermination = { _ in }
+            continuation = cont
+        }
         self.eventsContinuation = continuation
+    }
+
+    deinit {
+        timeoutTask?.cancel()
+        eventsContinuation.finish()
     }
 
     public func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
@@ -63,7 +71,7 @@ public final class WebViewCoordinator: NSObject, ObservableObject, WKNavigationD
     private func startTimeoutTimer() {
         timeoutTask?.cancel()
         timeoutTask = Task { [weak self, timeoutDuration] in
-            try? await Task.sleep(nanoseconds: UInt64(timeoutDuration * 1_000_000_000))
+            try? await Task.sleep(for: .seconds(timeoutDuration))
             guard !Task.isCancelled else { return }
             await MainActor.run {
                 self?.delegate?.didTimeout()
