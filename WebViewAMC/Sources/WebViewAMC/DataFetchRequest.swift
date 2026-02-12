@@ -1,5 +1,6 @@
 import Foundation
 
+@available(*, deprecated, message: "Use FetchAction instead")
 public struct DataFetchRequest: Sendable {
     let id: String
     let url: String?

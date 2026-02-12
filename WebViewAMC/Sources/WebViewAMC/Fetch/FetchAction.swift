@@ -27,4 +27,46 @@ public struct FetchAction: Sendable {
         self.cookies = cookies
         self.forceRefresh = forceRefresh
     }
+
+    public static func once(
+        id: String,
+        url: String? = nil,
+        javaScript: String,
+        delay: Duration = .seconds(1),
+        cookies: [HTTPCookie]? = nil,
+        forceRefresh: Bool = false
+    ) -> FetchAction {
+        FetchAction(id: id, url: url, javaScript: javaScript,
+                    strategy: .once(delay: delay),
+                    cookies: cookies, forceRefresh: forceRefresh)
+    }
+
+    public static func poll(
+        id: String,
+        url: String? = nil,
+        javaScript: String,
+        maxAttempts: Int,
+        delay: Duration = .seconds(1),
+        cookies: [HTTPCookie]? = nil,
+        forceRefresh: Bool = false,
+        until: @Sendable @MainActor @escaping () -> Bool
+    ) -> FetchAction {
+        FetchAction(id: id, url: url, javaScript: javaScript,
+                    strategy: .poll(maxAttempts: maxAttempts, delay: delay, until: until),
+                    cookies: cookies, forceRefresh: forceRefresh)
+    }
+
+    public static func continuous(
+        id: String,
+        url: String? = nil,
+        javaScript: String,
+        delay: Duration = .seconds(1),
+        cookies: [HTTPCookie]? = nil,
+        forceRefresh: Bool = false,
+        while condition: @Sendable @MainActor @escaping () -> Bool
+    ) -> FetchAction {
+        FetchAction(id: id, url: url, javaScript: javaScript,
+                    strategy: .continuous(delay: delay, while: condition),
+                    cookies: cookies, forceRefresh: forceRefresh)
+    }
 }

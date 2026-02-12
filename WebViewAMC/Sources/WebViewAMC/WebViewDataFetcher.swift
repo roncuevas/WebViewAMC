@@ -9,17 +9,118 @@ public final class WebViewDataFetcher {
     private let configuration: WebViewConfiguration
 
     public var tasksRunning = PassthroughSubject<[String], Never>()
+
+    private let tasksRunningContinuation: AsyncStream<[String]>.Continuation
+    public let tasksRunningStream: AsyncStream<[String]>
+
     public var defaultJS: [String]?
 
     public init(webView: WKWebView, configuration: WebViewConfiguration = .default) {
         self.webView = webView
         self.configuration = configuration
+        var continuation: AsyncStream<[String]>.Continuation!
+        self.tasksRunningStream = AsyncStream { continuation = $0 }
+        self.tasksRunningContinuation = continuation
     }
 
     public func getHTML() async throws -> String {
         let response = try await webView.evaluateJavaScript("document.documentElement.outerHTML;")
         return String(describing: response ?? "")
     }
+
+    // MARK: - FetchAction API
+
+    public func fetch(_ action: FetchAction) async -> FetchResult {
+        let id = action.id
+
+        let task = Task<FetchResult, Never> {
+            if let url = action.url {
+                webView.loadURL(id: id,
+                                url: url,
+                                forceRefresh: action.forceRefresh,
+                                cookies: action.cookies,
+                                cookieDomain: configuration.cookieDomain,
+                                logger: configuration.logger)
+            }
+
+            let result: FetchResult
+            switch action.strategy {
+            case .once(let delay):
+                result = await fetchOnce(id: id, javaScript: action.javaScript, delay: delay)
+            case .poll(let maxAttempts, let delay, let until):
+                result = await fetchPoll(id: id, javaScript: action.javaScript, maxAttempts: maxAttempts, delay: delay, until: until)
+            case .continuous(let delay, let condition):
+                result = await fetchContinuous(id: id, javaScript: action.javaScript, delay: delay, condition: condition)
+            }
+
+            taskManager.remove(key: id)
+            return result
+        }
+        taskManager.insert(key: id, value: Task { _ = try await task.value })
+
+        return await task.value
+    }
+
+    private func fetchOnce(id: String, javaScript: String, delay: Duration) async -> FetchResult {
+        do {
+            try await Task.sleep(for: delay)
+            guard !Task.isCancelled else { return .cancelled(id) }
+            try await webView.injectJavaScriptAsync(
+                handlerName: configuration.handlerName,
+                defaultJS: defaultJS,
+                javaScript: javaScript,
+                verbose: configuration.verbose,
+                logger: configuration.logger
+            )
+            return .completed(id)
+        } catch is CancellationError {
+            return .cancelled(id)
+        } catch {
+            return .failed(id, .fetchFailed(error.localizedDescription))
+        }
+    }
+
+    private func fetchPoll(id: String, javaScript: String, maxAttempts: Int, delay: Duration, until: @Sendable @MainActor () -> Bool) async -> FetchResult {
+        for attempt in 0..<maxAttempts {
+            guard !Task.isCancelled else { return .cancelled(id) }
+            do {
+                try await Task.sleep(for: delay)
+            } catch {
+                return .cancelled(id)
+            }
+            configuration.logger.log(.debug, "Polling \(id) attempt \(attempt + 1)/\(maxAttempts)")
+            try? await webView.injectJavaScriptAsync(
+                handlerName: configuration.handlerName,
+                defaultJS: defaultJS,
+                javaScript: javaScript,
+                verbose: configuration.verbose,
+                logger: configuration.logger
+            )
+            if until() { return .completed(id) }
+        }
+        return .completed(id)
+    }
+
+    private func fetchContinuous(id: String, javaScript: String, delay: Duration, condition: @Sendable @MainActor () -> Bool) async -> FetchResult {
+        while condition() {
+            guard !Task.isCancelled else { return .cancelled(id) }
+            do {
+                try await Task.sleep(for: delay)
+            } catch {
+                return .cancelled(id)
+            }
+            try? await webView.injectJavaScriptAsync(
+                handlerName: configuration.handlerName,
+                defaultJS: defaultJS,
+                javaScript: javaScript,
+                verbose: configuration.verbose,
+                logger: configuration.logger
+            )
+        }
+        return .completed(id)
+    }
+
+    // MARK: - Legacy DataFetchRequest API
 
     private func fetch(request: DataFetchRequest) {
         let task = Task {
@@ -55,75 +156,7 @@ public final class WebViewDataFetcher {
         taskManager.insert(key: request.id, value: task)
     }
 
-    public func fetch(_ action: FetchAction) async -> FetchResult {
-        let id = action.id
-
-        if let url = action.url {
-            webView.loadURL(id: id,
-                            url: url,
-                            forceRefresh: action.forceRefresh,
-                            cookies: action.cookies,
-                            cookieDomain: configuration.cookieDomain,
-                            logger: configuration.logger)
-        }
-
-        switch action.strategy {
-        case .once(let delay):
-            do {
-                try await Task.sleep(for: delay)
-                guard !Task.isCancelled else { return .cancelled(id) }
-                webView.injectJavaScript(
-                    handlerName: configuration.handlerName,
-                    defaultJS: defaultJS,
-                    javaScript: action.javaScript,
-                    verbose: configuration.verbose,
-                    logger: configuration.logger
-                )
-                return .completed(id)
-            } catch {
-                return .failed(id, .fetchFailed(error.localizedDescription))
-            }
-
-        case .poll(let maxAttempts, let delay, let until):
-            for attempt in 0..<maxAttempts {
-                guard !Task.isCancelled else { return .cancelled(id) }
-                do {
-                    try await Task.sleep(for: delay)
-                } catch {
-                    return .failed(id, .fetchFailed(error.localizedDescription))
-                }
-                configuration.logger.log(.debug, "Polling \(id) attempt \(attempt + 1)/\(maxAttempts)")
-                webView.injectJavaScript(
-                    handlerName: configuration.handlerName,
-                    defaultJS: defaultJS,
-                    javaScript: action.javaScript,
-                    verbose: configuration.verbose,
-                    logger: configuration.logger
-                )
-                if until() { return .completed(id) }
-            }
-            return .completed(id)
-
-        case .continuous(let delay, let condition):
-            while condition() {
-                guard !Task.isCancelled else { return .cancelled(id) }
-                do {
-                    try await Task.sleep(for: delay)
-                } catch {
-                    return .failed(id, .fetchFailed(error.localizedDescription))
-                }
-                webView.injectJavaScript(
-                    handlerName: configuration.handlerName,
-                    defaultJS: defaultJS,
-                    javaScript: action.javaScript,
-                    verbose: configuration.verbose,
-                    logger: configuration.logger
-                )
-            }
-            return .completed(id)
-        }
-    }
-
+    @available(*, deprecated, message: "Use fetch(_ action: FetchAction) instead")
     public func fetch(_ requests: [DataFetchRequest],
                       for url: String? = nil) {
         if let url {
@@ -139,12 +172,15 @@ public final class WebViewDataFetcher {
         }
     }
 
+    // MARK: - Task Management
+
     public func debugTaskManager() {
         guard !taskManager.hasTask(at: "DEBUG_TASK_MANAGER") else { return }
         let task = Task {
             while true {
                 configuration.logger.log(.debug, "Tasks - \(self.taskManager.count): \(self.taskManager.keys)")
                 tasksRunning.send(taskManager.keys)
+                tasksRunningContinuation.yield(taskManager.keys)
                 try await Task.sleep(nanoseconds: 1_000_000_000)
             }
         }
