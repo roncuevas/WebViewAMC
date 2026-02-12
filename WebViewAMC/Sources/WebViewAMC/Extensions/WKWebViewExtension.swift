@@ -1,6 +1,7 @@
 import WebKit
 
 public extension WKWebView {
+    @available(*, deprecated, message: "Use injectJavaScriptAsync instead")
     func injectJavaScript(handlerName: String,
                           defaultJS: [String]?,
                           javaScript: String,
@@ -13,6 +14,25 @@ public extension WKWebView {
             if let error = error, verbose {
                 logger.log(.error, "Error executing JavaScript: \(error)", source: "WKWebView")
             }
+        }
+    }
+
+    @discardableResult
+    func injectJavaScriptAsync(handlerName: String,
+                               defaultJS: [String]? = nil,
+                               javaScript: String,
+                               verbose: Bool = false,
+                               logger: any WebViewLoggerProtocol = WebViewLogger()) async throws -> Any? {
+        var combinedScript = [Scripts.common(handlerName)]
+        combinedScript.append(contentsOf: defaultJS ?? [])
+        combinedScript.append(javaScript)
+        do {
+            return try await self.evaluateJavaScript(combinedScript.joined(separator: ";"))
+        } catch {
+            if verbose {
+                logger.log(.error, "Error executing JavaScript: \(error)", source: "WKWebView")
+            }
+            throw error
         }
     }
 
