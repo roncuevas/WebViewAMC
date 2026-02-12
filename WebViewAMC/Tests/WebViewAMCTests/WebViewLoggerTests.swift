@@ -3,6 +3,7 @@ import Testing
 
 @Suite("WebViewLogger")
 struct WebViewLoggerTests {
+    @MainActor
     @Test("MockWebViewLogger captures messages")
     func capturesMessages() {
         let logger = MockWebViewLogger()
@@ -14,6 +15,7 @@ struct WebViewLoggerTests {
         #expect(logger.entries[0].source == "Test")
     }
 
+    @MainActor
     @Test("Level filtering with MockWebViewLogger")
     func levelFiltering() {
         let logger = MockWebViewLogger()
@@ -28,6 +30,7 @@ struct WebViewLoggerTests {
         #expect(logger.messages(at: .error).count == 1)
     }
 
+    @MainActor
     @Test("hasMessage finds matching text")
     func hasMessage() {
         let logger = MockWebViewLogger()
@@ -37,6 +40,7 @@ struct WebViewLoggerTests {
         #expect(logger.hasMessage(containing: "missing") == false)
     }
 
+    @MainActor
     @Test("Reset clears all entries")
     func reset() {
         let logger = MockWebViewLogger()
@@ -53,6 +57,7 @@ struct WebViewLoggerTests {
         #expect(WebViewLogLevel.warning < WebViewLogLevel.error)
     }
 
+    @MainActor
     @Test("Default log method uses WebViewAMC source")
     func defaultSource() {
         let logger = MockWebViewLogger()

@@ -1,6 +1,7 @@
 import Foundation
 @testable import WebViewAMC
 
+@MainActor
 final class MockWebViewLogger: WebViewLoggerProtocol, @unchecked Sendable {
     struct LogEntry: Equatable {
         let level: WebViewLogLevel
@@ -10,8 +11,10 @@ final class MockWebViewLogger: WebViewLoggerProtocol, @unchecked Sendable {
 
     private(set) var entries = [LogEntry]()
 
-    func log(_ level: WebViewLogLevel, _ message: String, source: String) {
-        entries.append(LogEntry(level: level, message: message, source: source))
+    nonisolated func log(_ level: WebViewLogLevel, _ message: String, source: String) {
+        MainActor.assumeIsolated {
+            entries.append(LogEntry(level: level, message: message, source: source))
+        }
     }
 
     func reset() {

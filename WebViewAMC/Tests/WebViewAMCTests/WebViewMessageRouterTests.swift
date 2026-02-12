@@ -84,4 +84,100 @@ struct WebViewMessageRouterTests {
         #expect(keys.contains("b"))
         #expect(keys.count == 2)
     }
+
+    // MARK: - New Tests
+
+    @MainActor
+    @Test("Registered handler takes priority over fallback")
+    func handlerPriorityOverFallback() {
+        let router = WebViewMessageRouter()
+        var handlerCalled = false
+        var fallbackCalled = false
+
+        router.register(key: "test") { _ in handlerCalled = true }
+        router.registerFallback { _ in fallbackCalled = true }
+
+        router.route(["test": "value"])
+
+        #expect(handlerCalled == true)
+        #expect(fallbackCalled == false)
+    }
+
+    @MainActor
+    @Test("Empty message dictionary does nothing")
+    func emptyMessageDictionary() {
+        let router = WebViewMessageRouter()
+        var called = false
+
+        router.registerFallback { _ in called = true }
+        router.route([:])
+
+        #expect(called == false)
+    }
+
+    @MainActor
+    @Test("Replacing handler overwrites previous one")
+    func replaceHandler() {
+        let router = WebViewMessageRouter()
+        var firstCalled = false
+        var secondCalled = false
+
+        router.register(key: "test") { _ in firstCalled = true }
+        router.register(key: "test") { _ in secondCalled = true }
+
+        router.route(["test": "value"])
+
+        #expect(firstCalled == false)
+        #expect(secondCalled == true)
+    }
+
+    @MainActor
+    @Test("Unregistering non-existent key does not crash")
+    func unregisterNonExistent() {
+        let router = WebViewMessageRouter()
+        router.unregister(key: "doesNotExist")
+        // Should not crash
+    }
+
+    @MainActor
+    @Test("Fallback receives unregistered keys while registered keys go to handlers")
+    func mixedHandlerAndFallback() {
+        let router = WebViewMessageRouter()
+        var handlerKeys = [String]()
+        var fallbackKeys = [String]()
+
+        router.register(key: "known") { msg in handlerKeys.append(msg.key) }
+        router.registerFallback { msg in fallbackKeys.append(msg.key) }
+
+        router.route(["known": "1", "unknown": "2"])
+
+        #expect(handlerKeys == ["known"])
+        #expect(fallbackKeys == ["unknown"])
+    }
+
+    @MainActor
+    @Test("Message value is correctly decoded via decoder")
+    func messageValueDecoding() {
+        let router = WebViewMessageRouter()
+        var receivedValue: WebViewMessageValue?
+
+        router.register(key: "flag") { msg in receivedValue = msg.value }
+
+        router.route(["flag": "1"])
+
+        guard case .bool(let val) = receivedValue else {
+            Issue.record("Expected .bool, got \(String(describing: receivedValue))")
+            return
+        }
+        #expect(val == true)
+    }
+
+    @MainActor
+    @Test("No fallback handler does not crash for unregistered keys")
+    func noFallbackNoCrash() {
+        let router = WebViewMessageRouter()
+        router.register(key: "only") { _ in }
+        router.route(["other": "value"])
+        // Should not crash
+    }
 }

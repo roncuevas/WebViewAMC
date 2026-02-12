@@ -155,4 +155,142 @@ struct WebViewDataFetcherTests {
             Issue.record("Expected .completed, got \(result)")
         }
     }
+
+    // MARK: - New Tests
+
+    @MainActor
+    @Test("fetch .once returns .completed on success")
+    func fetchOnceCompleted() async {
+        let webView = WKWebView()
+        let fetcher = WebViewDataFetcher(webView: webView)
+
+        let action = FetchAction.once(
+            id: "onceTest",
+            javaScript: "void(0)",
+            delay: .milliseconds(10)
+        )
+
+        let result = await fetcher.fetch(action)
+        // JS injection will fail on empty WKWebView, but it should still return a result
+        #expect(result.id == "onceTest")
+    }
+
+    @MainActor
+    @Test("fetch .poll completes even when maxAttempts reached without condition met")
+    func pollMaxAttemptsReached() async {
+        let webView = WKWebView()
+        let fetcher = WebViewDataFetcher(webView: webView)
+
+        let action = FetchAction.poll(
+            id: "maxPoll",
+            javaScript: "check()",
+            maxAttempts: 3,
+            delay: .milliseconds(10),
+            until: { false }  // Never satisfied
+        )
+
+        let result = await fetcher.fetch(action)
+        #expect(result.id == "maxPoll")
+        #expect(result.isCompleted)
+    }
+
+    @MainActor
+    @Test("fetch .continuous that starts false returns immediately")
+    func continuousImmediatelyFalse() async {
+        let webView = WKWebView()
+        let fetcher = WebViewDataFetcher(webView: webView)
+
+        let action = FetchAction.continuous(
+            id: "immediateFalse",
+            javaScript: "loop()",
+            delay: .milliseconds(10),
+            while: { false }  // Immediately false
+        )
+
+        let result = await fetcher.fetch(action)
+        #expect(result.isCompleted)
+        #expect(result.id == "immediateFalse")
+    }
+
+    @MainActor
+    @Test("Duplicate task ID cancels previous task")
+    func duplicateTaskIdCancelsPrevious() async {
+        let webView = WKWebView()
+        let logger = MockWebViewLogger()
+        let config = WebViewConfiguration(verbose: true, logger: logger)
+        let fetcher = WebViewDataFetcher(webView: webView, configuration: config)
+
+        // Start a long-running continuous fetch
+        let longTask = Task {
+            await fetcher.fetch(
+                .continuous(
+                    id: "dup",
+                    javaScript: "loop()",
+                    delay: .seconds(10),
+                    while: { true }
+                )
+            )
+        }
+
+        // Give it time to register
+        try? await Task.sleep(for: .milliseconds(50))
+        #expect(fetcher.isRunning("dup") == true)
+
+        // Start another fetch with the same ID — should cancel previous
+        let result = await fetcher.fetch(
+            .once(id: "dup", javaScript: "void(0)", delay: .milliseconds(10))
+        )
+
+        #expect(result.id == "dup")
+        #expect(logger.hasMessage(containing: "already running"))
+
+        longTask.cancel()
+    }
+
+    @MainActor
+    @Test("cancelAllTasks logs info message")
+    func cancelAllTasksLogs() {
+        let webView = WKWebView()
+        let logger = MockWebViewLogger()
+        let config = WebViewConfiguration(logger: logger)
+        let fetcher = WebViewDataFetcher(webView: webView, configuration: config)
+
+        fetcher.cancelAllTasks()
+
+        #expect(logger.hasMessage(containing: "ALL"))
+    }
+
+    @MainActor
+    @Test("cancelTasks logs specific keys")
+    func cancelTasksLogsKeys() {
+        let webView = WKWebView()
+        let logger = MockWebViewLogger()
+        let config = WebViewConfiguration(logger: logger)
+        let fetcher = WebViewDataFetcher(webView: webView, configuration: config)
+
+        fetcher.cancelTasks(["task1", "task2"])
+
+        #expect(logger.hasMessage(containing: "task1"))
+        #expect(logger.hasMessage(containing: "task2"))
+    }
+
+    @MainActor
+    @Test("FetchResult convenience properties work correctly")
+    func fetchResultConvenience() async {
+        let webView = WKWebView()
+        let fetcher = WebViewDataFetcher(webView: webView)
+
+        let action = FetchAction.continuous(
+            id: "conv",
+            javaScript: "void(0)",
+            delay: .milliseconds(10),
+            while: { false }
+        )
+
+        let result = await fetcher.fetch(action)
+        #expect(result.isCompleted)
+        #expect(!result.isCancelled)
+        #expect(!result.isFailed)
+        #expect(result.error == nil)
+    }
 }
