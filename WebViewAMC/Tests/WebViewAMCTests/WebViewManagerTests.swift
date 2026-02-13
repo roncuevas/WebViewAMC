@@ -69,4 +69,31 @@ struct WebViewManagerTests {
         // Verifies cookieManager was initialized with the domain (returns empty for no cookies)
         #expect(cookies.isEmpty)
     }
+
+    // MARK: - Process Pool
+
+    @MainActor
+    @Test("Custom process pool is applied to WKWebView")
+    func customProcessPool() {
+        let pool = WKProcessPool()
+        let manager = WebViewManager(processPool: pool)
+        #expect(manager.webView.configuration.processPool === pool)
+    }
+
+    @MainActor
+    @Test("Nil process pool uses default (each manager gets its own)")
+    func nilProcessPoolDefault() {
+        let manager1 = WebViewManager()
+        let manager2 = WebViewManager()
+        #expect(manager1.webView.configuration.processPool !== manager2.webView.configuration.processPool)
+    }
+
+    @MainActor
+    @Test("Shared process pool enables cookie sharing between managers")
+    func sharedProcessPool() {
+        let pool = WKProcessPool()
+        let manager1 = WebViewManager(processPool: pool)
+        let manager2 = WebViewManager(processPool: pool)
+        #expect(manager1.webView.configuration.processPool === manager2.webView.configuration.processPool)
+    }
 }

@@ -13,7 +13,7 @@ public final class WebViewManager: WebViewManaging, Sendable {
     public let messageRouter: WebViewMessageRouter
     public let cookieManager: CookieManager
 
-    public init(configuration: WebViewConfiguration = .default) {
+    public init(configuration: WebViewConfiguration = .default, processPool: WKProcessPool? = nil) {
         self.configuration = configuration
 
         let userContentController = WKUserContentController()
@@ -24,6 +24,9 @@ public final class WebViewManager: WebViewManaging, Sendable {
 
         let wkConfiguration = WKWebViewConfiguration()
         wkConfiguration.userContentController = userContentController
+        if let processPool {
+            wkConfiguration.processPool = processPool
+        }
         let webView = WKWebView(frame: .zero, configuration: wkConfiguration)
 
         let coordinator = WebViewCoordinator(timeoutDuration: configuration.timeoutDuration)
