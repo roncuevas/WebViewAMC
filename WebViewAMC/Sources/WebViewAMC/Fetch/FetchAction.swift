@@ -13,19 +13,22 @@ public struct FetchAction: Sendable {
     public let strategy: FetchStrategy
     public let cookies: [HTTPCookie]?
     public let forceRefresh: Bool
+    public let waitFor: WaitCondition
 
     public init(id: String,
                 url: String? = nil,
                 javaScript: String,
                 strategy: FetchStrategy = .once(),
                 cookies: [HTTPCookie]? = nil,
-                forceRefresh: Bool = false) {
+                forceRefresh: Bool = false,
+                waitFor: WaitCondition = .none) {
         self.id = id
         self.url = url
         self.javaScript = javaScript
         self.strategy = strategy
         self.cookies = cookies
         self.forceRefresh = forceRefresh
+        self.waitFor = waitFor
     }
 
     public static func once(
@@ -34,11 +37,13 @@ public struct FetchAction: Sendable {
         javaScript: String,
         delay: Duration = .seconds(1),
         cookies: [HTTPCookie]? = nil,
-        forceRefresh: Bool = false
+        forceRefresh: Bool = false,
+        waitFor: WaitCondition = .none
     ) -> FetchAction {
         FetchAction(id: id, url: url, javaScript: javaScript,
                     strategy: .once(delay: delay),
-                    cookies: cookies, forceRefresh: forceRefresh)
+                    cookies: cookies, forceRefresh: forceRefresh,
+                    waitFor: waitFor)
     }
 
     public static func poll(
@@ -49,11 +54,13 @@ public struct FetchAction: Sendable {
         delay: Duration = .seconds(1),
         cookies: [HTTPCookie]? = nil,
         forceRefresh: Bool = false,
+        waitFor: WaitCondition = .none,
         until: @Sendable @MainActor @escaping () -> Bool
     ) -> FetchAction {
         FetchAction(id: id, url: url, javaScript: javaScript,
                     strategy: .poll(maxAttempts: maxAttempts, delay: delay, until: until),
-                    cookies: cookies, forceRefresh: forceRefresh)
+                    cookies: cookies, forceRefresh: forceRefresh,
+                    waitFor: waitFor)
     }
 
     public static func continuous(
@@ -63,10 +70,12 @@ public struct FetchAction: Sendable {
         delay: Duration = .seconds(1),
         cookies: [HTTPCookie]? = nil,
         forceRefresh: Bool = false,
+        waitFor: WaitCondition = .none,
         while condition: @Sendable @MainActor @escaping () -> Bool
     ) -> FetchAction {
         FetchAction(id: id, url: url, javaScript: javaScript,
                     strategy: .continuous(delay: delay, while: condition),
-                    cookies: cookies, forceRefresh: forceRefresh)
+                    cookies: cookies, forceRefresh: forceRefresh,
+                    waitFor: waitFor)
     }
 }

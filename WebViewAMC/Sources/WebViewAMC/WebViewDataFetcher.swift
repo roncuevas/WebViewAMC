@@ -32,6 +32,78 @@ public final class WebViewDataFetcher {
         return response as? String
     }
 
+    // MARK: - Typed Evaluation
+
+    public func evaluate<T: Decodable>(_ javaScript: String) async throws -> T {
+        try await evaluate(javaScript, using: JSONDecoder())
+    }
+
+    public func evaluate<T: Decodable>(_ javaScript: String, using decoder: JSONDecoder) async throws -> T {
+        let raw = try await webView.evaluateJavaScript(javaScript)
+        return try JavaScriptResultMapper.castOrDecode(raw, using: decoder)
+    }
+
+    // MARK: - Wait Primitives
+
+    public func waitForElement(
+        _ selector: String,
+        timeout: Duration = .seconds(10),
+        pollInterval: Duration = .milliseconds(250)
+    ) async throws {
+        let escapedSelector = selector.replacingOccurrences(of: "'", with: "\\'")
+        let js = "document.querySelector('\(escapedSelector)') !== null"
+        let deadline = ContinuousClock.now + timeout
+
+        while ContinuousClock.now < deadline {
+            try Task.checkCancellation()
+            if let result = try? await webView.evaluateJavaScript(js) {
+                if let found = result as? Bool, found {
+                    configuration.logger.log(.debug, "Element found: \(selector)")
+                    return
+                }
+                if let number = result as? NSNumber, number.boolValue {
+                    configuration.logger.log(.debug, "Element found: \(selector)")
+                    return
+                }
+            }
+            try await Task.sleep(for: pollInterval)
+        }
+
+        throw WebViewError.timeout
+    }
+
+    public func waitForNavigation(
+        timeout: Duration = .seconds(15),
+        pollInterval: Duration = .milliseconds(250)
+    ) async throws {
+        let deadline = ContinuousClock.now + timeout
+
+        // Brief wait for navigation to start if not already loading
+        if !webView.isLoading {
+            try await Task.sleep(for: .milliseconds(100))
+        }
+
+        // Poll until loading completes
+        while webView.isLoading {
+            guard ContinuousClock.now < deadline else {
+                throw WebViewError.timeout
+            }
+            try Task.checkCancellation()
+            try await Task.sleep(for: pollInterval)
+        }
+    }
+
+    private func resolveWaitCondition(_ condition: WaitCondition) async throws {
+        switch condition {
+        case .element(let selector, let timeout, let pollInterval):
+            try await waitForElement(selector, timeout: timeout, pollInterval: pollInterval)
+        case .navigation(let timeout, let pollInterval):
+            try await waitForNavigation(timeout: timeout, pollInterval: pollInterval)
+        case .none:
+            break
+        }
+    }
+
     // MARK: - FetchAction API
 
     public func fetch(_ action: FetchAction) async -> FetchResult {
@@ -55,11 +127,11 @@ public final class WebViewDataFetcher {
             let result: FetchResult
             switch action.strategy {
             case .once(let delay):
-                result = await fetchOnce(id: id, javaScript: action.javaScript, delay: delay)
+                result = await fetchOnce(id: id, javaScript: action.javaScript, delay: delay, waitFor: action.waitFor)
             case .poll(let maxAttempts, let delay, let until):
-                result = await fetchPoll(id: id, javaScript: action.javaScript, maxAttempts: maxAttempts, delay: delay, until: until)
+                result = await fetchPoll(id: id, javaScript: action.javaScript, maxAttempts: maxAttempts, delay: delay, waitFor: action.waitFor, until: until)
             case .continuous(let delay, let condition):
-                result = await fetchContinuous(id: id, javaScript: action.javaScript, delay: delay, condition: condition)
+                result = await fetchContinuous(id: id, javaScript: action.javaScript, delay: delay, waitFor: action.waitFor, condition: condition)
             }
 
             taskManager.remove(key: id)
@@ -70,9 +142,13 @@ public final class WebViewDataFetcher {
         return await task.value
     }
 
-    private func fetchOnce(id: String, javaScript: String, delay: Duration) async -> FetchResult {
+    private func fetchOnce(id: String, javaScript: String, delay: Duration, waitFor: WaitCondition) async -> FetchResult {
         do {
-            try await Task.sleep(for: delay)
+            if case .none = waitFor {
+                try await Task.sleep(for: delay)
+            } else {
+                try await resolveWaitCondition(waitFor)
+            }
             guard !Task.isCancelled else { return .cancelled(id) }
             try await webView.injectJavaScriptAsync(
                 handlerName: configuration.handlerName,
@@ -84,12 +160,29 @@ public final class WebViewDataFetcher {
             return .completed(id)
         } catch is CancellationError {
             return .cancelled(id)
+        } catch let error as WebViewError {
+            return .failed(id, error)
         } catch {
             return .failed(id, .fetchFailed(error.localizedDescription))
         }
     }
 
-    private func fetchPoll(id: String, javaScript: String, maxAttempts: Int, delay: Duration, until: @Sendable @MainActor () -> Bool) async -> FetchResult {
+    private func fetchPoll(id: String, javaScript: String, maxAttempts: Int, delay: Duration, waitFor: WaitCondition, until: @Sendable @MainActor () -> Bool) async -> FetchResult {
+        // Resolve wait condition before polling starts
+        if case .none = waitFor {
+            // No pre-wait
+        } else {
+            do {
+                try await resolveWaitCondition(waitFor)
+            } catch is CancellationError {
+                return .cancelled(id)
+            } catch let error as WebViewError {
+                return .failed(id, error)
+            } catch {
+                return .failed(id, .fetchFailed(error.localizedDescription))
+            }
+        }
+
         for attempt in 0..<maxAttempts {
             guard !Task.isCancelled else { return .cancelled(id) }
             do {
@@ -116,7 +209,22 @@ public final class WebViewDataFetcher {
         return .completed(id)
     }
 
-    private func fetchContinuous(id: String, javaScript: String, delay: Duration, condition: @Sendable @MainActor () -> Bool) async -> FetchResult {
+    private func fetchContinuous(id: String, javaScript: String, delay: Duration, waitFor: WaitCondition, condition: @Sendable @MainActor () -> Bool) async -> FetchResult {
+        // Resolve wait condition before continuous loop starts
+        if case .none = waitFor {
+            // No pre-wait
+        } else {
+            do {
+                try await resolveWaitCondition(waitFor)
+            } catch is CancellationError {
+                return .cancelled(id)
+            } catch let error as WebViewError {
+                return .failed(id, error)
+            } catch {
+                return .failed(id, .fetchFailed(error.localizedDescription))
+            }
+        }
+
         while condition() {
             guard !Task.isCancelled else { return .cancelled(id) }
             do {

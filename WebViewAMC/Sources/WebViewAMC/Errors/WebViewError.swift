@@ -8,6 +8,7 @@ public enum WebViewError: Error, Sendable, Equatable {
     case taskCancelled(String)
     case fetchFailed(String)
     case messageDecodingFailed(String)
+    case typeCastFailed(expected: String, actual: String)
 }
 
 extension WebViewError: LocalizedError {
@@ -27,6 +28,8 @@ extension WebViewError: LocalizedError {
             return "Fetch failed: \(detail)"
         case .messageDecodingFailed(let detail):
             return "Message decoding failed: \(detail)"
+        case .typeCastFailed(let expected, let actual):
+            return "Type cast failed: expected \(expected), got \(actual)"
         }
     }
 }
