@@ -149,6 +149,67 @@ case .failed(let id, let error):
 | `isFailed` | `Bool` | `true` if fetch failed |
 | `error` | `WebViewError?` | The error, if failed |
 
+### Smart Waiting
+
+Replace fixed delays with intelligent wait conditions:
+
+```swift
+// Wait for a specific element to appear in the DOM
+try await fetcher.waitForElement("#grades-table", timeout: .seconds(10))
+
+// Wait for navigation to complete
+try await fetcher.waitForNavigation(timeout: .seconds(15))
+
+// Use with FetchAction — replaces fixed delay
+let result = await fetcher.fetch(
+    .once(
+        id: "grades",
+        url: "https://example.com/grades",
+        javaScript: "postMessage(getGrades())",
+        waitFor: .element("#grades-table")  // waits for element instead of fixed delay
+    )
+)
+
+// Wait for navigation before polling
+let result = await fetcher.fetch(
+    .poll(
+        id: "data",
+        url: "https://example.com",
+        javaScript: "postMessage(getData())",
+        maxAttempts: 5,
+        waitFor: .navigation(timeout: .seconds(10)),
+        until: { !data.isEmpty }
+    )
+)
+```
+
+| WaitCondition | Default Timeout | Description |
+|---------------|----------------|-------------|
+| `.element(_ selector:)` | 10s | Polls until CSS selector matches |
+| `.navigation()` | 15s | Waits until page finishes loading |
+| `.none` | — | Uses the strategy's fixed delay (default) |
+
+### Typed JavaScript Evaluation
+
+Evaluate JavaScript and get type-safe results:
+
+```swift
+// Primitive types
+let title: String = try await fetcher.evaluate("document.title")
+let count: Int = try await fetcher.evaluate("document.querySelectorAll('.item').length")
+let ratio: Double = try await fetcher.evaluate("window.devicePixelRatio")
+let loaded: Bool = try await fetcher.evaluate("document.readyState === 'complete'")
+
+// Decodable types from JSON strings
+struct Grade: Decodable { let subject: String; let score: Int }
+let grades: [Grade] = try await fetcher.evaluate("JSON.stringify(getGrades())")
+
+// Custom JSONDecoder
+let decoder = JSONDecoder()
+decoder.keyDecodingStrategy = .convertFromSnakeCase
+let user: User = try await fetcher.evaluate("JSON.stringify(getUserData())", using: decoder)
+```
+
 ### Get Current Page HTML
 
 ```swift
@@ -407,6 +468,8 @@ do {
         print("Fetch failed: \(detail)")
     case .messageDecodingFailed(let detail):
         print("Decode failed: \(detail)")
+    case .typeCastFailed(let expected, let actual):
+        print("Type cast failed: expected \(expected), got \(actual)")
     }
 }
 ```
@@ -418,7 +481,10 @@ WebViewManager (singleton or custom instance)
 ├── webView: WKWebView              — The web view
 ├── coordinator: WebViewCoordinator  — Navigation delegate + events stream
 ├── fetcher: WebViewDataFetcher      — Fetch orchestration + task tracking
-│   └── tasksRunning: AsyncStream    — Stream of active task IDs
+│   ├── evaluate<T>(_:)             — Typed JavaScript evaluation
+│   ├── waitForElement(_:)          — Smart element waiting
+│   ├── waitForNavigation()         — Smart navigation waiting
+│   └── tasksRunning: AsyncStream   — Stream of active task IDs
 ├── handler: WebViewMessageHandler   — JS↔Swift bridge
 ├── messageRouter: WebViewMessageRouter — Type-safe message routing
 ├── cookieManager: CookieManager     — Cookie operations
@@ -444,15 +510,16 @@ xcodebuild test -scheme WebViewAMC \
   -destination 'platform=iOS Simulator,name=iPhone 17 Pro'
 ```
 
-The package includes **127 unit tests across 15 suites** covering:
+The package includes **150 unit tests across 16 suites** covering:
 
 | Suite | Tests | Covers |
 |-------|-------|--------|
 | WebViewMessageDecoder | 21 | Value type detection, edge cases |
+| WebViewDataFetcher | 22 | Fetch strategies, task tracking, wait primitives |
+| FetchAction | 17 | Strategies, factories, defaults, WaitCondition |
 | WebViewTaskManager | 18 | Insert, remove, cancel, await |
-| WebViewDataFetcher | 18 | Fetch strategies, task tracking, cancellation |
+| JavaScriptResultMapper | 12 | Type casting, JSON decoding, error cases |
 | WebViewMessageRouter | 12 | Routing, fallback, priority, replacement |
-| FetchAction | 12 | Strategies, factories, defaults |
 | WebViewCoordinator | 10 | Navigation events, timeout, delegation |
 | FetchResult | 7 | Convenience properties, Equatable |
 | WebViewManager | 7 | Initialization, component wiring |
@@ -460,7 +527,7 @@ The package includes **127 unit tests across 15 suites** covering:
 | CookieManager | 5 | Domain cookies, HTTP header formatting |
 | Scripts | 5 | Handler interpolation, helpers |
 | NavigationEvent | 5 | All event cases |
-| WebViewError | 2 | Equatable, localized descriptions |
+| WebViewError | 3 | Equatable, localized descriptions, typeCastFailed |
 | WebViewMessage | 2 | Property storage, value cases |
 | WebViewConfiguration | 3 | Defaults, custom values |
 
