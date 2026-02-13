@@ -56,6 +56,36 @@ struct BrowserView: View {
 }
 ```
 
+### WebViewReader (Recommended)
+
+Use `WebViewReader` for reactive state and programmatic control, following the `ScrollViewReader` pattern:
+
+```swift
+import SwiftUI
+import WebViewAMC
+
+struct BrowserView: View {
+    var body: some View {
+        WebViewReader { proxy in
+            VStack {
+                if proxy.isLoading {
+                    ProgressView(value: proxy.estimatedProgress)
+                }
+                WebView(proxy: proxy)
+                HStack {
+                    Button("Back") { proxy.goBack() }
+                        .disabled(!proxy.canGoBack)
+                    Button("Forward") { proxy.goForward() }
+                        .disabled(!proxy.canGoForward)
+                    Button("Reload") { proxy.reload() }
+                }
+                Text(proxy.title ?? "Untitled")
+            }
+        }
+    }
+}
+```
+
 ## Configuration
 
 `WebViewConfiguration` controls all behavior of the package:
@@ -72,6 +102,71 @@ let config = WebViewConfiguration(
 ```
 
 Use `WebViewConfiguration.default` for sensible defaults.
+
+## WebViewProxy
+
+`WebViewProxy` is an `ObservableObject` that provides reactive KVO-backed properties and action methods for the underlying `WKWebView`.
+
+### Reactive Properties
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `isLoading` | `Bool` | Whether the web view is currently loading |
+| `url` | `URL?` | The current URL |
+| `title` | `String?` | The current page title |
+| `canGoBack` | `Bool` | Whether back navigation is available |
+| `canGoForward` | `Bool` | Whether forward navigation is available |
+| `estimatedProgress` | `Double` | Page load progress (0.0–1.0) |
+
+### Navigation Actions
+
+```swift
+WebViewReader { proxy in
+    // Load a URL
+    proxy.load("https://example.com")
+    proxy.load(URL(string: "https://example.com")!)
+    proxy.load("https://example.com", cookies: myCookies, forceRefresh: true)
+
+    // Navigation
+    proxy.goBack()
+    proxy.goForward()
+    proxy.reload()
+    proxy.stop()
+
+    // Convenience evaluation (delegates to fetcher)
+    let title: String = try await proxy.evaluate("document.title")
+    let html = try await proxy.getHTML()
+    let result = await proxy.fetch(.once(id: "test", javaScript: "run()"))
+}
+```
+
+### Subsystem Access
+
+The proxy provides pass-through access to all `WebViewManager` subsystems:
+
+```swift
+WebViewReader { proxy in
+    proxy.fetcher          // WebViewDataFetcher
+    proxy.cookieManager    // CookieManager
+    proxy.messageRouter    // WebViewMessageRouter
+    proxy.coordinator      // WebViewCoordinator
+    proxy.handler          // WebViewMessageHandler
+    proxy.configuration    // WebViewConfiguration
+    proxy.webView          // WKWebView (direct access)
+}
+```
+
+### Custom Manager
+
+By default, `WebViewReader` uses `WebViewManager.shared`. Pass a custom manager for isolated instances:
+
+```swift
+let manager = WebViewManager(configuration: myConfig)
+
+WebViewReader(manager: manager) { proxy in
+    WebView(proxy: proxy)
+}
+```
 
 ## Fetching Data
 
@@ -489,6 +584,11 @@ WebViewManager (singleton or custom instance)
 ├── messageRouter: WebViewMessageRouter — Type-safe message routing
 ├── cookieManager: CookieManager     — Cookie operations
 └── configuration: WebViewConfiguration — All settings
+
+SwiftUI Layer
+├── WebViewReader<Content>           — Container view (owns proxy as @StateObject)
+├── WebViewProxy                     — ObservableObject with KVO-backed reactive state
+└── WebView                          — UIViewRepresentable (accepts proxy or raw WKWebView)
 ```
 
 ### Protocols
@@ -510,12 +610,13 @@ xcodebuild test -scheme WebViewAMC \
   -destination 'platform=iOS Simulator,name=iPhone 17 Pro'
 ```
 
-The package includes **150 unit tests across 16 suites** covering:
+The package includes **172 unit tests across 18 suites** covering:
 
 | Suite | Tests | Covers |
 |-------|-------|--------|
 | WebViewMessageDecoder | 21 | Value type detection, edge cases |
 | WebViewDataFetcher | 22 | Fetch strategies, task tracking, wait primitives |
+| WebViewProxy | 20 | KVO state, pass-throughs, actions, fetch delegation |
 | FetchAction | 17 | Strategies, factories, defaults, WaitCondition |
 | WebViewTaskManager | 18 | Insert, remove, cancel, await |
 | JavaScriptResultMapper | 12 | Type casting, JSON decoding, error cases |
@@ -528,8 +629,9 @@ The package includes **150 unit tests across 16 suites** covering:
 | Scripts | 5 | Handler interpolation, helpers |
 | NavigationEvent | 5 | All event cases |
 | WebViewError | 3 | Equatable, localized descriptions, typeCastFailed |
-| WebViewMessage | 2 | Property storage, value cases |
 | WebViewConfiguration | 3 | Defaults, custom values |
+| WebViewReader | 2 | Custom manager, proxy init |
+| WebViewMessage | 2 | Property storage, value cases |
 
 ## License
 
