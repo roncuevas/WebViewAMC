@@ -75,7 +75,7 @@ Use `WebViewConfiguration.default` for sensible defaults.
 
 ## Fetching Data
 
-### Using FetchAction (recommended)
+### FetchAction
 
 `FetchAction` provides an awaitable API with three strategies:
 
@@ -84,13 +84,21 @@ let manager = WebViewManager.shared
 
 // One-shot fetch
 let result = await manager.fetcher.fetch(
-    FetchAction(
+    .once(
         id: "getTitle",
         url: "https://example.com",
         javaScript: "postMessage({ title: document.title })"
     )
 )
 
+// Check result using convenience properties
+if result.isCompleted {
+    print("Fetch \(result.id) completed")
+} else if result.isFailed {
+    print("Error: \(result.error?.localizedDescription ?? "unknown")")
+}
+
+// Or use pattern matching
 switch result {
 case .completed(let id):
     print("Fetch \(id) completed")
@@ -104,49 +112,49 @@ case .failed(let id, let error):
 ### Fetch Strategies
 
 ```swift
-// Once: execute JS after a delay (default)
-FetchAction(id: "once", javaScript: "...", strategy: .once(delay: .seconds(2)))
+// Once: execute JS after a delay (default: 1 second)
+.once(id: "title", javaScript: "postMessage({ title: document.title })")
+
+// Once with custom delay
+.once(id: "title", javaScript: "...", delay: .seconds(2))
 
 // Poll: retry up to N times until a condition is met
-FetchAction(
-    id: "poll",
-    javaScript: "...",
-    strategy: .poll(maxAttempts: 10, delay: .seconds(1), until: { dataReceived })
-)
-
-// Continuous: keep executing while a condition holds
-FetchAction(
-    id: "stream",
-    javaScript: "...",
-    strategy: .continuous(delay: .milliseconds(500), while: { isListening })
-)
-```
-
-### Using DataFetchRequest (legacy)
-
-For batch operations using the fire-and-forget pattern:
-
-```swift
-let request = DataFetchRequest(
+.poll(
     id: "grades",
     url: "https://example.com/grades",
     javaScript: "postMessage({ grades: getGrades() })",
-    iterations: 5
+    maxAttempts: 5,
+    delay: .seconds(1),
+    until: { !grades.isEmpty }
 )
-manager.fetcher.fetch([request])
+
+// Continuous: keep executing while a condition holds
+.continuous(
+    id: "captcha",
+    javaScript: "postMessage({ img: getCaptcha() })",
+    delay: .milliseconds(500),
+    while: { needsCaptcha }
+)
 ```
 
-Convert legacy requests to the new API:
+### FetchResult
 
-```swift
-let action = request.toFetchAction()
-let result = await manager.fetcher.fetch(action)
-```
+`FetchResult` is `Equatable` and provides convenience properties:
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `id` | `String` | The task identifier |
+| `isCompleted` | `Bool` | `true` if fetch completed |
+| `isCancelled` | `Bool` | `true` if fetch was cancelled |
+| `isFailed` | `Bool` | `true` if fetch failed |
+| `error` | `WebViewError?` | The error, if failed |
 
 ### Get Current Page HTML
 
 ```swift
-let html = try await manager.fetcher.getHTML()
+if let html = try await manager.fetcher.getHTML() {
+    print(html)
+}
 ```
 
 ## Message Handling
@@ -201,7 +209,7 @@ The decoder automatically detects the value type:
 | `"data:image/jpeg;base64,..."` | `.data(Data)` |
 | `{ key1: "val1", key2: "val2" }` | `.dictionary([String: String])` |
 
-### Delegate Pattern (legacy)
+### Delegate Pattern
 
 ```swift
 class MyHandler: WebViewMessageHandlerDelegate {
@@ -220,8 +228,11 @@ manager.handler.delegate = myHandler
 ```swift
 let cookies = manager.cookieManager
 
-// Inject cookies into WKWebView
+// Inject cookies asynchronously
 await cookies.injectCookies(myCookies)
+
+// Inject cookies synchronously (fire-and-forget)
+cookies.setCookiesSync(myCookies)
 
 // Get all cookies
 let all = await cookies.getAllCookies()
@@ -311,7 +322,7 @@ let script = Scripts.custom(
 ### Direct Injection
 
 ```swift
-manager.webView.injectJavaScript(
+try await manager.webView.injectJavaScriptAsync(
     handlerName: "myApp",
     defaultJS: ["var config = { debug: true };"],
     javaScript: "postMessage({ title: document.title })",
@@ -362,7 +373,16 @@ fetcher.cancelTasks(["grades", "schedule"])
 
 // Cancel all tasks
 fetcher.cancelAllTasks()
+
+// Monitor running tasks via AsyncStream
+Task {
+    for await runningKeys in fetcher.tasksRunning {
+        print("Active tasks: \(runningKeys)")
+    }
+}
 ```
+
+> If `fetch()` is called with an ID that's already running, the previous task is automatically cancelled and a warning is logged.
 
 ## Error Handling
 
@@ -395,12 +415,13 @@ do {
 
 ```
 WebViewManager (singleton or custom instance)
-├── webView: WKWebView           — The web view
-├── coordinator: WebViewCoordinator — Navigation delegate + events
-├── fetcher: WebViewDataFetcher     — Fetch orchestration
-├── handler: WebViewMessageHandler  — JS↔Swift bridge
+├── webView: WKWebView              — The web view
+├── coordinator: WebViewCoordinator  — Navigation delegate + events stream
+├── fetcher: WebViewDataFetcher      — Fetch orchestration + task tracking
+│   └── tasksRunning: AsyncStream    — Stream of active task IDs
+├── handler: WebViewMessageHandler   — JS↔Swift bridge
 ├── messageRouter: WebViewMessageRouter — Type-safe message routing
-├── cookieManager: CookieManager    — Cookie operations
+├── cookieManager: CookieManager     — Cookie operations
 └── configuration: WebViewConfiguration — All settings
 ```
 
@@ -416,16 +437,32 @@ WebViewManager (singleton or custom instance)
 
 ## Testing
 
-```bash
-# Run all tests
-swift test
+The package is iOS-only, so tests must run on a simulator:
 
-# Or with xcodebuild
+```bash
 xcodebuild test -scheme WebViewAMC \
-  -destination 'platform=iOS Simulator,name=iPhone 16'
+  -destination 'platform=iOS Simulator,name=iPhone 17 Pro'
 ```
 
-The package includes 47 unit tests covering: message decoding, message routing, task management, configuration, fetch actions, error types, logging, scripts, and data fetch requests.
+The package includes **127 unit tests across 15 suites** covering:
+
+| Suite | Tests | Covers |
+|-------|-------|--------|
+| WebViewMessageDecoder | 21 | Value type detection, edge cases |
+| WebViewTaskManager | 18 | Insert, remove, cancel, await |
+| WebViewDataFetcher | 18 | Fetch strategies, task tracking, cancellation |
+| WebViewMessageRouter | 12 | Routing, fallback, priority, replacement |
+| FetchAction | 12 | Strategies, factories, defaults |
+| WebViewCoordinator | 10 | Navigation events, timeout, delegation |
+| FetchResult | 7 | Convenience properties, Equatable |
+| WebViewManager | 7 | Initialization, component wiring |
+| WebViewLogger | 6 | Capture, filtering, levels |
+| CookieManager | 5 | Domain cookies, HTTP header formatting |
+| Scripts | 5 | Handler interpolation, helpers |
+| NavigationEvent | 5 | All event cases |
+| WebViewError | 2 | Equatable, localized descriptions |
+| WebViewMessage | 2 | Property storage, value cases |
+| WebViewConfiguration | 3 | Defaults, custom values |
 
 ## License
 
