@@ -7,6 +7,10 @@ public struct WebView: UIViewRepresentable {
     public init(webView: WKWebView) {
         self.webView = webView
     }
+
+    public init(proxy: WebViewProxy) {
+        self.webView = proxy.webView
+    }
     
     public func makeUIView(context: Context) -> WKWebView {
         return webView
