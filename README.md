@@ -569,6 +569,68 @@ do {
 }
 ```
 
+## Multiple Contexts
+
+Use `WebViewContextGroup` to create multiple isolated web view instances that share cookies via a common `WKProcessPool`:
+
+```swift
+let group = WebViewContextGroup()
+let loginContext = group.createContext(id: "login")
+let gradesContext = group.createContext(id: "grades")
+let scheduleContext = group.createContext(id: "schedule")
+
+// All contexts share cookies — login once, scrape from all
+await loginContext.fetcher.fetch(.once(id: "login", javaScript: "submitForm()"))
+await gradesContext.fetcher.fetch(.poll(
+    id: "grades", javaScript: "getGrades()", maxAttempts: 5, until: { !grades.isEmpty }
+))
+```
+
+### Manual Process Pool Sharing
+
+For finer control, pass a shared `WKProcessPool` directly:
+
+```swift
+let pool = WKProcessPool()
+let mgr1 = WebViewManager(processPool: pool)
+let mgr2 = WebViewManager(processPool: pool)
+// mgr1 and mgr2 share cookie storage
+```
+
+### Context Group API
+
+| Method | Description |
+|--------|-------------|
+| `createContext(id:configuration:)` | Creates a new named context with shared pool |
+| `context(for:)` | Retrieves a context by ID |
+| `removeContext(_:)` | Removes a context |
+| `removeAll()` | Removes all contexts |
+| `count` | Number of active contexts |
+| `ids` | Sorted list of context identifiers |
+| `hasContext(_:)` | Whether a context exists |
+
+## Headless Mode
+
+Use `HeadlessWebView` to keep a WKWebView alive in the view hierarchy without it being visible. This prevents iOS from suspending JavaScript execution:
+
+```swift
+var body: some View {
+    MyContent()
+        .background { HeadlessWebView() }
+}
+```
+
+With a specific context:
+
+```swift
+var body: some View {
+    MyContent()
+        .background { HeadlessWebView(manager: scrapingManager) }
+}
+```
+
+The view renders at 1x1 pixels with near-zero opacity, invisible to users but active for scraping operations.
+
 ## Architecture Overview
 
 ```
@@ -585,10 +647,14 @@ WebViewManager (singleton or custom instance)
 ├── cookieManager: CookieManager     — Cookie operations
 └── configuration: WebViewConfiguration — All settings
 
+WebViewContextGroup (optional, manages multiple managers)
+└── processPool: WKProcessPool       — Shared cookie storage across contexts
+
 SwiftUI Layer
 ├── WebViewReader<Content>           — Container view (owns proxy as @StateObject)
 ├── WebViewProxy                     — ObservableObject with KVO-backed reactive state
-└── WebView                          — UIViewRepresentable (accepts proxy or raw WKWebView)
+├── WebView                          — UIViewRepresentable (accepts proxy or raw WKWebView)
+└── HeadlessWebView                  — Invisible view for background scraping
 ```
 
 ### Protocols
@@ -610,24 +676,26 @@ xcodebuild test -scheme WebViewAMC \
   -destination 'platform=iOS Simulator,name=iPhone 17 Pro'
 ```
 
-The package includes **172 unit tests across 18 suites** covering:
+The package includes **195 unit tests across 20 suites** covering:
 
 | Suite | Tests | Covers |
 |-------|-------|--------|
 | WebViewMessageDecoder | 21 | Value type detection, edge cases |
 | WebViewDataFetcher | 22 | Fetch strategies, task tracking, wait primitives |
 | WebViewProxy | 20 | KVO state, pass-throughs, actions, fetch delegation |
-| FetchAction | 17 | Strategies, factories, defaults, WaitCondition |
 | WebViewTaskManager | 18 | Insert, remove, cancel, await |
+| FetchAction | 17 | Strategies, factories, defaults, WaitCondition |
+| WebViewContextGroup | 16 | Context creation, removal, process pool sharing, isolation |
 | JavaScriptResultMapper | 12 | Type casting, JSON decoding, error cases |
 | WebViewMessageRouter | 12 | Routing, fallback, priority, replacement |
+| WebViewManager | 10 | Initialization, component wiring, process pool |
 | WebViewCoordinator | 10 | Navigation events, timeout, delegation |
 | FetchResult | 7 | Convenience properties, Equatable |
-| WebViewManager | 7 | Initialization, component wiring |
 | WebViewLogger | 6 | Capture, filtering, levels |
 | CookieManager | 5 | Domain cookies, HTTP header formatting |
 | Scripts | 5 | Handler interpolation, helpers |
 | NavigationEvent | 5 | All event cases |
+| HeadlessWebView | 4 | Init, custom manager, body render, context group integration |
 | WebViewError | 3 | Equatable, localized descriptions, typeCastFailed |
 | WebViewConfiguration | 3 | Defaults, custom values |
 | WebViewReader | 2 | Custom manager, proxy init |
