@@ -143,4 +143,73 @@ struct FetchActionTests {
         #expect(continuous.url == "https://c.com")
         #expect(continuous.forceRefresh == true)
     }
+
+    // MARK: - WaitCondition tests
+
+    @Test("Default waitFor is .none")
+    func defaultWaitForIsNone() {
+        let action = FetchAction(id: "test", javaScript: "void(0)")
+        if case .none = action.waitFor {
+            // pass
+        } else {
+            Issue.record("Expected .none waitFor")
+        }
+    }
+
+    @Test("Once factory accepts waitFor")
+    func onceFactoryWithWaitFor() {
+        let action = FetchAction.once(
+            id: "test",
+            javaScript: "void(0)",
+            waitFor: .element("#result")
+        )
+        if case .element(let selector, _, _) = action.waitFor {
+            #expect(selector == "#result")
+        } else {
+            Issue.record("Expected .element waitFor")
+        }
+    }
+
+    @Test("Poll factory accepts waitFor")
+    func pollFactoryWithWaitFor() {
+        let action = FetchAction.poll(
+            id: "test",
+            javaScript: "void(0)",
+            maxAttempts: 3,
+            waitFor: .navigation(timeout: .seconds(5)),
+            until: { true }
+        )
+        if case .navigation(let timeout, _) = action.waitFor {
+            #expect(timeout == .seconds(5))
+        } else {
+            Issue.record("Expected .navigation waitFor")
+        }
+    }
+
+    @Test("Continuous factory accepts waitFor")
+    func continuousFactoryWithWaitFor() {
+        let action = FetchAction.continuous(
+            id: "test",
+            javaScript: "void(0)",
+            waitFor: .element("#table", timeout: .seconds(20)),
+            while: { false }
+        )
+        if case .element(let selector, let timeout, _) = action.waitFor {
+            #expect(selector == "#table")
+            #expect(timeout == .seconds(20))
+        } else {
+            Issue.record("Expected .element waitFor")
+        }
+    }
+
+    @Test("Existing factories still work without waitFor")
+    func backwardCompatibility() {
+        let once = FetchAction.once(id: "a", javaScript: "x()")
+        let poll = FetchAction.poll(id: "b", javaScript: "y()", maxAttempts: 1, until: { true })
+        let continuous = FetchAction.continuous(id: "c", javaScript: "z()", while: { false })
+
+        if case .none = once.waitFor {} else { Issue.record("Expected .none") }
+        if case .none = poll.waitFor {} else { Issue.record("Expected .none") }
+        if case .none = continuous.waitFor {} else { Issue.record("Expected .none") }
+    }
 }

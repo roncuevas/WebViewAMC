@@ -293,4 +293,68 @@ struct WebViewDataFetcherTests {
         #expect(!result.isFailed)
         #expect(result.error == nil)
     }
+
+    // MARK: - Wait Primitives
+
+    @MainActor
+    @Test("waitForElement times out when element not found")
+    func waitForElementTimeout() async {
+        let webView = WKWebView()
+        let fetcher = WebViewDataFetcher(webView: webView)
+
+        do {
+            try await fetcher.waitForElement("#nonexistent", timeout: .milliseconds(300), pollInterval: .milliseconds(50))
+            Issue.record("Expected timeout error")
+        } catch let error as WebViewError {
+            #expect(error == .timeout)
+        } catch {
+            Issue.record("Expected WebViewError.timeout, got \(error)")
+        }
+    }
+
+    @MainActor
+    @Test("waitForNavigation returns when not loading")
+    func waitForNavigationNotLoading() async throws {
+        let webView = WKWebView()
+        let fetcher = WebViewDataFetcher(webView: webView)
+
+        // WKWebView starts with isLoading = false, so after the initial 100ms wait
+        // it should return immediately since !isLoading
+        try await fetcher.waitForNavigation(timeout: .seconds(2), pollInterval: .milliseconds(50))
+    }
+
+    @MainActor
+    @Test("fetch .once with waitFor .none still uses delay")
+    func fetchOnceWithWaitForNone() async {
+        let webView = WKWebView()
+        let fetcher = WebViewDataFetcher(webView: webView)
+
+        let action = FetchAction.once(
+            id: "delayTest",
+            javaScript: "void(0)",
+            delay: .milliseconds(10),
+            waitFor: .none
+        )
+
+        let result = await fetcher.fetch(action)
+        #expect(result.id == "delayTest")
+    }
+
+    @MainActor
+    @Test("fetch .once with waitFor .element times out and returns .failed")
+    func fetchOnceWithWaitForElementTimeout() async {
+        let webView = WKWebView()
+        let fetcher = WebViewDataFetcher(webView: webView)
+
+        let action = FetchAction.once(
+            id: "waitTest",
+            javaScript: "void(0)",
+            waitFor: .element("#missing", timeout: .milliseconds(200), pollInterval: .milliseconds(50))
+        )
+
+        let result = await fetcher.fetch(action)
+        #expect(result.id == "waitTest")
+        #expect(result.isFailed)
+        #expect(result.error == .timeout)
+    }
 }

@@ -33,5 +33,18 @@ struct WebViewErrorTests {
 
         let decodeFailed = WebViewError.messageDecodingFailed("bad format")
         #expect(decodeFailed.localizedDescription.contains("bad format"))
+
+        let typeCast = WebViewError.typeCastFailed(expected: "Int", actual: "String")
+        #expect(typeCast.localizedDescription.contains("Int"))
+        #expect(typeCast.localizedDescription.contains("String"))
+    }
+
+    @Test("typeCastFailed Equatable works")
+    func typeCastFailedEquatable() {
+        let a = WebViewError.typeCastFailed(expected: "Int", actual: "nil")
+        let b = WebViewError.typeCastFailed(expected: "Int", actual: "nil")
+        let c = WebViewError.typeCastFailed(expected: "String", actual: "nil")
+        #expect(a == b)
+        #expect(a != c)
     }
 }
