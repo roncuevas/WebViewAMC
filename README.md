@@ -278,11 +278,11 @@ let result = await fetcher.fetch(
 )
 ```
 
-| WaitCondition | Default Timeout | Description |
-|---------------|----------------|-------------|
-| `.element(_ selector:)` | 10s | Polls until CSS selector matches |
-| `.navigation()` | 15s | Waits until page finishes loading |
-| `.none` | — | Uses the strategy's fixed delay (default) |
+| WaitCondition | Default Timeout | Default Poll Interval | Description |
+|---------------|----------------|-----------------------|-------------|
+| `.element(_ selector:, timeout:, pollInterval:)` | 10s | 250ms | Polls DOM until CSS selector matches |
+| `.navigation(timeout:, pollInterval:)` | 15s | 250ms | Polls until page finishes loading |
+| `.none` | — | — | Uses the strategy's fixed delay (default) |
 
 ### Typed JavaScript Evaluation
 
@@ -443,6 +443,14 @@ class MyCoordinator: WebViewCoordinatorDelegate {
 }
 
 manager.coordinator.delegate = myCoordinator
+```
+
+### Dynamic Timeout
+
+Change the navigation timeout duration at runtime:
+
+```swift
+manager.coordinator.setTimeout(60) // 60 seconds
 ```
 
 ## JavaScript Injection
