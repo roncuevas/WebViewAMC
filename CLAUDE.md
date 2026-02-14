@@ -91,6 +91,12 @@ Tag `v2.0.0` (commit `977f865`) marks the breaking transition from the old API t
 - WKWebView cookie extensions → `CookieManager` as single source of truth
 - All new features after this tag (typed evaluation, WebViewProxy/Reader, ContextGroup, HeadlessWebView) use the modern API exclusively.
 
+## Git Conventions
+
+- **Never** add `Co-Authored-By` or any co-author line to commits.
+- Make **multiple atomic commits** — each commit should contain a single logical change.
+- Follow **Conventional Commits** format: `type(scope): description` (e.g., `feat:`, `fix:`, `docs:`, `refactor:`, `test:`, `chore:`).
+
 ## Test Conventions
 
 - Uses **Swift Testing** framework (`import Testing`, `@Suite`, `@Test` macros) — not XCTest.
